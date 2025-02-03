@@ -16,6 +16,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the full application code
 COPY . .
 
+# Move templates into config/templates
+RUN mkdir -p /app/config/templates
+RUN cp -r /app/templates/* /app/config/templates/
+
 # Expose the application port
 EXPOSE 8100
 
