@@ -8,17 +8,18 @@ from datetime import datetime, timedelta
 
 # Define Config Directory
 CONFIG_DIR = "config"
-M3U_FILE = None  # Will be set dynamically
+M3U_DIR = os.path.join(CONFIG_DIR, "m3u")
 DB_FILE = os.path.join(CONFIG_DIR, "iptv_channels.db")
 
-# Ensure Config Directory Exists
+# Ensure Config Directories Exist
+os.makedirs(M3U_DIR, exist_ok=True)
 os.makedirs(CONFIG_DIR, exist_ok=True)
 
-# Scan for an M3U file in the config directory
-for file in os.listdir(CONFIG_DIR):
-    if file.endswith(".m3u"):
-        M3U_FILE = os.path.join(CONFIG_DIR, file)
-        break
+def find_m3u_file():
+    for file in os.listdir(M3U_DIR):
+        if file.endswith(".m3u"):
+            return os.path.join(M3U_DIR, file)
+    return None
 
 def init_db():
     conn = sqlite3.connect(DB_FILE)
@@ -34,15 +35,19 @@ init_db()
 
 # Function to fetch & parse M3U playlist
 def load_m3u_from_file():
+    M3U_FILE = find_m3u_file()
     if not M3U_FILE:
-        print("No M3U file found.")
+        print("[INFO] No M3U file found in the directory.")
         return "No M3U file found."
+    
+    print(f"[INFO] Found M3U file: {M3U_FILE}. Scanning...")
     
     with open(M3U_FILE, "r", encoding="utf-8") as f:
         lines = f.readlines()
     
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
+    c.execute("DELETE FROM channels")  # Clear previous entries
     
     for i in range(len(lines)):
         if lines[i].startswith("#EXTINF"):
@@ -52,7 +57,7 @@ def load_m3u_from_file():
     
     conn.commit()
     conn.close()
-    print("M3U Loaded!")
+    print("[SUCCESS] M3U Loaded successfully!")
     return "M3U Loaded!"
 
 # Load M3U on startup
@@ -60,6 +65,10 @@ load_m3u_from_file()
 
 # Initialize FastAPI
 app = FastAPI()
+
+# Get server IP from environment variable
+def get_server_ip():
+    return os.getenv("SERVER_IP", "127.0.0.1")
 
 @app.get("/channels")
 def list_channels():
@@ -70,37 +79,9 @@ def list_channels():
     conn.close()
     return {"channels": data}
 
-@app.get("/tuner/{channel_id}")
-def stream_channel(channel_id: int):
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    c.execute("SELECT url FROM channels WHERE id = ?", (channel_id,))
-    result = c.fetchone()
-    conn.close()
-    
-    if not result:
-        return {"error": "Channel not found"}
-    
-    url = result[0]
-    ffmpeg_cmd = [
-        "ffmpeg", "-hide_banner", "-loglevel", "error",
-        "-user_agent", "VLC/3.0.20-git LibVLC/3.0.20-git",
-        "-re", "-i", url,
-        "-max_muxing_queue_size", "1024",
-        "-c:v", "copy", "-c:a", "ac3",
-        "-bufsize", "5M",
-        "-f", "mpegts", "pipe:1"
-    ]
-
-    try:
-        process = subprocess.Popen(ffmpeg_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=10**8)
-        return StreamingResponse(process.stdout, media_type="video/mp2t")
-    except Exception as e:
-        return {"error": f"Failed to start FFmpeg: {str(e)}"}
-
 @app.get("/discover.json")
 def discover():
-    server_ip = "10.0.0.92"
+    server_ip = get_server_ip()
     return JSONResponse(content={
         "FriendlyName": "IPTV HDHomeRun",
         "Manufacturer": "Custom",
@@ -115,7 +96,7 @@ def discover():
 
 @app.get("/lineup.json")
 def lineup():
-    server_ip = "10.0.0.92"
+    server_ip = get_server_ip()
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     c.execute("SELECT id, name, url FROM channels")
