@@ -1,4 +1,4 @@
-FROM jrottenberg/ffmpeg:4.4-python3.10-slim  # Prebuilt FFmpeg + Python
+FROM jrottenberg/ffmpeg:4.4-python3.10-slim
 
 # Set the working directory
 WORKDIR /app
