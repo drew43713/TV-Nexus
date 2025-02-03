@@ -1,9 +1,10 @@
-FROM jrottenberg/ffmpeg:4.4-python3.10-slim  # Prebuilt FFmpeg + Python
+# Use a lightweight Python image with FFmpeg pre-installed
+FROM jrottenberg/ffmpeg:4.4-python3.10-slim
 
 # Set the working directory
 WORKDIR /app
 
-# Copy requirements and install dependencies
+# Copy requirements and install Python dependencies
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
