@@ -93,9 +93,11 @@ def stream_channel(channel_id: int):
     # Optimized FFmpeg command to reduce buffering
     ffmpeg_cmd = [
         "ffmpeg", "-hide_banner", "-loglevel", "error",
-        "-user_agent", "Mozilla/5.0",  # Pretend to be a browser
+        "-user_agent", "VLC/3.0.20-git LibVLC/3.0.20-git",  # Pretend to be a browser
         "-re", "-i", url,
+        "-max_muxing_queue_size", "1024",  # Prevent buffer overflows
         "-c:v", "copy", "-c:a", "ac3",
+        "-bufsize", "5M",  # Increase buffer size
         "-f", "mpegts", "pipe:1"
     ]
 
