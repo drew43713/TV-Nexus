@@ -1,0 +1,5 @@
+# Ignore SQLite DB and other temporary files
+*.db
+__pycache__/
+*.pyc
+.env
