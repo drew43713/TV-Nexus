@@ -1,13 +1,19 @@
-FROM jrottenberg/ffmpeg:4.4-python3.10-slim
+# Use FFmpeg base image
+FROM lscr.io/linuxserver/ffmpeg:latest
+
+# Install Python and pip
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 python3-pip && \
+    rm -rf /var/lib/apt/lists/*
 
 # Set the working directory
 WORKDIR /app
 
-# Copy requirements and install dependencies
+# Copy and install Python dependencies
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the application code
+# Copy application code
 COPY . .
 
 # Expose the application port
