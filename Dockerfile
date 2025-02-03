@@ -1,14 +1,9 @@
-FROM python:3.10-slim
+FROM jrottenberg/ffmpeg:4.4-python3.10-slim  # Prebuilt FFmpeg + Python
 
 # Set the working directory
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ffmpeg && \
-    rm -rf /var/lib/apt/lists/*
-
-# Copy requirements and install Python dependencies
+# Copy requirements and install dependencies
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
