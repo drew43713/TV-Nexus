@@ -1,10 +1,9 @@
-# Use a lightweight Python image with FFmpeg pre-installed
-FROM ghcr.io/jrottenberg/ffmpeg-python:latest
+FROM jrottenberg/ffmpeg:4.4-python3.10-slim  # Prebuilt FFmpeg + Python
 
 # Set the working directory
 WORKDIR /app
 
-# Copy requirements and install Python dependencies
+# Copy requirements and install dependencies
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
