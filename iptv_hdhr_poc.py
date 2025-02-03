@@ -27,14 +27,11 @@ def find_epg_files():
 def init_db():
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-    
-    # Create table if it doesn't exist
     c.execute('''CREATE TABLE IF NOT EXISTS channels (
                     id INTEGER PRIMARY KEY, 
                     name TEXT, 
                     url TEXT,
                     tvg_name TEXT)''')
-    
     conn.commit()
     conn.close()
 
