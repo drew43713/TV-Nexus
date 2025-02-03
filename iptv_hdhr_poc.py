@@ -111,3 +111,36 @@ def lineup():
         })
     
     return JSONResponse(content=lineup)
+
+@app.get("/lineup_status.json")
+def lineup_status():
+    return JSONResponse(content={"ScanInProgress": 0, "ScanPossible": 1, "Source": "Cable", "SourceList": ["Cable"]})
+
+@app.get("/tuner/{channel_id}")
+def stream_channel(channel_id: int):
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("SELECT url FROM channels WHERE id = ?", (channel_id,))
+    result = c.fetchone()
+    conn.close()
+    
+    if not result:
+        return {"error": "Channel not found"}
+    
+    url = result[0]
+    
+    ffmpeg_cmd = [
+        "ffmpeg", "-hide_banner", "-loglevel", "error",
+        "-user_agent", "VLC/3.0.20-git LibVLC/3.0.20-git",
+        "-re", "-i", url,
+        "-max_muxing_queue_size", "1024",
+        "-c:v", "copy", "-c:a", "ac3",
+        "-bufsize", "5M",
+        "-f", "mpegts", "pipe:1"
+    ]
+
+    try:
+        process = subprocess.Popen(ffmpeg_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=10**8)
+        return StreamingResponse(process.stdout, media_type="video/mp2t")
+    except Exception as e:
+        return {"error": f"Failed to start FFmpeg: {str(e)}"}
