@@ -2,9 +2,11 @@ import os
 import sqlite3
 import requests
 import subprocess
-from fastapi import FastAPI, Query
-from fastapi.responses import StreamingResponse, JSONResponse, Response
+from fastapi import FastAPI, Query, Request
+from fastapi.responses import StreamingResponse, JSONResponse, Response, HTMLResponse
+from fastapi.templating import Jinja2Templates
 from datetime import datetime, timedelta
+import socket
 
 # Define Config Directory
 CONFIG_DIR = "config"
@@ -65,9 +67,10 @@ load_m3u_from_directory()
 # Initialize FastAPI
 app = FastAPI()
 
-# Get server IP from environment variable
-import socket
+# Set up Jinja2 templates directory
+templates = Jinja2Templates(directory="templates")
 
+# Get server IP from environment variable
 def get_server_ip():
     try:
         hostname = socket.gethostname()
@@ -150,3 +153,16 @@ def stream_channel(channel_id: int):
         return StreamingResponse(process.stdout, media_type="video/mp2t")
     except Exception as e:
         return {"error": f"Failed to start FFmpeg: {str(e)}"}
+
+# New endpoint to serve the index.html page at /web
+@app.get("/web", response_class=HTMLResponse)
+async def get_web(request: Request):
+    # Fetch channels from the database
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("SELECT id, name, url FROM channels")
+    channels = c.fetchall()
+    conn.close()
+    
+    # Render index.html with the list of channels
+    return templates.TemplateResponse("index.html", {"request": request, "channels": channels})
