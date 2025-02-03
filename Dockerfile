@@ -1,5 +1,5 @@
 # Use a lightweight Python image with FFmpeg pre-installed
-FROM jrottenberg/ffmpeg:4.4-python3.10-slim
+FROM jrottenberg/ffmpeg:4.4-slim
 
 # Set the working directory
 WORKDIR /app
