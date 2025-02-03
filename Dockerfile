@@ -1,25 +1,17 @@
-# Stage 1: Get FFmpeg from linuxserver.io image
-FROM lscr.io/linuxserver/ffmpeg:latest as ffmpeg
+FROM jrottenberg/ffmpeg:4.4-python3.10
 
-# Stage 2: Use a lightweight Python image
-FROM python:3.10-slim
-
-# Copy FFmpeg binaries from Stage 1
-COPY --from=ffmpeg /usr/bin/ffmpeg /usr/bin/ffmpeg
-COPY --from=ffmpeg /usr/bin/ffprobe /usr/bin/ffprobe
-
-# Set working directory
+# Set the working directory
 WORKDIR /app
 
-# Install dependencies
+# Copy requirements and install dependencies
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
+# Copy the application code
 COPY . .
 
 # Expose the application port
 EXPOSE 8100
 
-# Run the application
+# Command to run the application
 CMD ["uvicorn", "iptv_hdhr_poc:app", "--host", "0.0.0.0", "--port", "8100"]
