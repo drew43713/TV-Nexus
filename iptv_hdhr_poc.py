@@ -90,13 +90,17 @@ def stream_channel(channel_id: int):
     
     url = result[0]
     
-    # Start FFmpeg process to serve the stream
+    # Optimized FFmpeg command to reduce buffering
     ffmpeg_cmd = [
-        "ffmpeg", "-re", "-i", url, "-c:v", "copy", "-c:a", "copy", "-f", "mpegts", "pipe:1"
+        "ffmpeg", "-hide_banner", "-loglevel", "error",
+        "-user_agent", "Mozilla/5.0",  # Pretend to be a browser
+        "-re", "-i", url,
+        "-c:v", "copy", "-c:a", "ac3",
+        "-f", "mpegts", "pipe:1"
     ]
 
     try:
-        process = subprocess.Popen(ffmpeg_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        process = subprocess.Popen(ffmpeg_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=10**8)
         return StreamingResponse(process.stdout, media_type="video/mp2t")
     except Exception as e:
         return {"error": f"Failed to start FFmpeg: {str(e)}"}
