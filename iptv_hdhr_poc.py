@@ -11,15 +11,12 @@ CONFIG_DIR = "config"
 M3U_DIR = os.path.join(CONFIG_DIR, "m3u")
 DB_FILE = os.path.join(CONFIG_DIR, "iptv_channels.db")
 
-# Ensure Config Directories Exist
-os.makedirs(M3U_DIR, exist_ok=True)
+# Ensure Config Directory Exists
 os.makedirs(CONFIG_DIR, exist_ok=True)
+os.makedirs(M3U_DIR, exist_ok=True)
 
-def find_m3u_file():
-    for file in os.listdir(M3U_DIR):
-        if file.endswith(".m3u"):
-            return os.path.join(M3U_DIR, file)
-    return None
+def find_m3u_files():
+    return [os.path.join(M3U_DIR, file) for file in os.listdir(M3U_DIR) if file.endswith(".m3u")]
 
 def init_db():
     conn = sqlite3.connect(DB_FILE)
@@ -33,35 +30,37 @@ def init_db():
 
 init_db()
 
-# Function to fetch & parse M3U playlist
-def load_m3u_from_file():
-    M3U_FILE = find_m3u_file()
-    if not M3U_FILE:
-        print("[INFO] No M3U file found in the directory.")
-        return "No M3U file found."
+# Function to fetch & parse M3U playlists
+def load_m3u_from_directory():
+    m3u_files = find_m3u_files()
+    if not m3u_files:
+        print("[INFO] No M3U files found in the directory.")
+        return "No M3U files found."
     
-    print(f"[INFO] Found M3U file: {M3U_FILE}. Scanning...")
-    
-    with open(M3U_FILE, "r", encoding="utf-8") as f:
-        lines = f.readlines()
+    print(f"[INFO] Found {len(m3u_files)} M3U files. Scanning...")
     
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     c.execute("DELETE FROM channels")  # Clear previous entries
     
-    for i in range(len(lines)):
-        if lines[i].startswith("#EXTINF"):
-            name = lines[i].split(",")[-1].strip()
-            url = lines[i + 1].strip()
-            c.execute("INSERT INTO channels (name, url) VALUES (?, ?)", (name, url))
+    for m3u_file in m3u_files:
+        print(f"[INFO] Processing M3U file: {m3u_file}")
+        with open(m3u_file, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+        
+        for i in range(len(lines)):
+            if lines[i].startswith("#EXTINF"):
+                name = lines[i].split(",")[-1].strip()
+                url = lines[i + 1].strip()
+                c.execute("INSERT INTO channels (name, url) VALUES (?, ?)", (name, url))
     
     conn.commit()
     conn.close()
-    print("[SUCCESS] M3U Loaded successfully!")
-    return "M3U Loaded!"
+    print("[SUCCESS] M3U files loaded successfully!")
+    return "M3U files loaded!"
 
 # Load M3U on startup
-load_m3u_from_file()
+load_m3u_from_directory()
 
 # Initialize FastAPI
 app = FastAPI()
