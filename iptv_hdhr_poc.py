@@ -61,6 +61,10 @@ load_m3u_from_file()
 # Initialize FastAPI
 app = FastAPI()
 
+# Get server IP from environment variable
+def get_server_ip():
+    return os.getenv("SERVER_IP", "127.0.0.1")
+
 @app.get("/channels")
 def list_channels():
     conn = sqlite3.connect(DB_FILE)
@@ -70,37 +74,9 @@ def list_channels():
     conn.close()
     return {"channels": data}
 
-@app.get("/tuner/{channel_id}")
-def stream_channel(channel_id: int):
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    c.execute("SELECT url FROM channels WHERE id = ?", (channel_id,))
-    result = c.fetchone()
-    conn.close()
-    
-    if not result:
-        return {"error": "Channel not found"}
-    
-    url = result[0]
-    ffmpeg_cmd = [
-        "ffmpeg", "-hide_banner", "-loglevel", "error",
-        "-user_agent", "VLC/3.0.20-git LibVLC/3.0.20-git",
-        "-re", "-i", url,
-        "-max_muxing_queue_size", "1024",
-        "-c:v", "copy", "-c:a", "ac3",
-        "-bufsize", "5M",
-        "-f", "mpegts", "pipe:1"
-    ]
-
-    try:
-        process = subprocess.Popen(ffmpeg_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=10**8)
-        return StreamingResponse(process.stdout, media_type="video/mp2t")
-    except Exception as e:
-        return {"error": f"Failed to start FFmpeg: {str(e)}"}
-
 @app.get("/discover.json")
 def discover():
-    server_ip = "10.0.0.92"
+    server_ip = get_server_ip()
     return JSONResponse(content={
         "FriendlyName": "IPTV HDHomeRun",
         "Manufacturer": "Custom",
@@ -115,7 +91,7 @@ def discover():
 
 @app.get("/lineup.json")
 def lineup():
-    server_ip = "10.0.0.92"
+    server_ip = get_server_ip()
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     c.execute("SELECT id, name, url FROM channels")
