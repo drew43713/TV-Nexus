@@ -66,8 +66,14 @@ load_m3u_from_directory()
 app = FastAPI()
 
 # Get server IP from environment variable
+import socket
+
 def get_server_ip():
-    return os.getenv("SERVER_IP", "127.0.0.1")
+    try:
+        hostname = socket.gethostname()
+        return socket.gethostbyname(hostname)
+    except Exception:
+        return "127.0.0.1"
 
 @app.get("/channels")
 def list_channels():
