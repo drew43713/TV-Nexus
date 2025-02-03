@@ -2,27 +2,21 @@ import os
 import sqlite3
 import requests
 import subprocess
-import xml.etree.ElementTree as ET
 from fastapi import FastAPI, Query
 from fastapi.responses import StreamingResponse, JSONResponse, Response
 from datetime import datetime, timedelta
 
-# Define Config Directories
+# Define Config Directory
 CONFIG_DIR = "config"
 M3U_DIR = os.path.join(CONFIG_DIR, "m3u")
-EPG_DIR = os.path.join(CONFIG_DIR, "epg")
 DB_FILE = os.path.join(CONFIG_DIR, "iptv_channels.db")
 
-# Ensure Config Directories Exist
+# Ensure Config Directory Exists
 os.makedirs(CONFIG_DIR, exist_ok=True)
 os.makedirs(M3U_DIR, exist_ok=True)
-os.makedirs(EPG_DIR, exist_ok=True)
 
 def find_m3u_files():
     return [os.path.join(M3U_DIR, file) for file in os.listdir(M3U_DIR) if file.endswith(".m3u")]
-
-def find_epg_files():
-    return [os.path.join(EPG_DIR, file) for file in os.listdir(EPG_DIR) if file.endswith(".xml")]
 
 def init_db():
     conn = sqlite3.connect(DB_FILE)
@@ -30,8 +24,7 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS channels (
                     id INTEGER PRIMARY KEY, 
                     name TEXT, 
-                    url TEXT,
-                    tvg_name TEXT)''')
+                    url TEXT)''')
     conn.commit()
     conn.close()
 
@@ -57,15 +50,9 @@ def load_m3u_from_directory():
         
         for i in range(len(lines)):
             if lines[i].startswith("#EXTINF"):
-                parts = lines[i].split(",")
-                name = parts[-1].strip()
-                tvg_name = ""  # Default empty
-                
-                if "tvg-name" in lines[i]:
-                    tvg_name = lines[i].split("tvg-name=")[1].split("\"")[1]
-                
+                name = lines[i].split(",")[-1].strip()
                 url = lines[i + 1].strip()
-                c.execute("INSERT INTO channels (name, url, tvg_name) VALUES (?, ?, ?)", (name, url, tvg_name))
+                c.execute("INSERT INTO channels (name, url) VALUES (?, ?)", (name, url))
     
     conn.commit()
     conn.close()
@@ -88,22 +75,6 @@ def get_server_ip():
     except Exception:
         return "127.0.0.1"
 
-@app.get("/epg")
-def generate_epg():
-    epg_files = find_epg_files()
-    if not epg_files:
-        return Response(content="<tv></tv>", media_type="application/xml")
-    
-    epg_data = "<?xml version='1.0' encoding='UTF-8'?><tv>"
-    
-    for epg_file in epg_files:
-        tree = ET.parse(epg_file)
-        root = tree.getroot()
-        epg_data += ET.tostring(root, encoding='unicode')
-    
-    epg_data += "</tv>"
-    return Response(content=epg_data, media_type="application/xml")
-
 @app.get("/channels")
 def list_channels():
     conn = sqlite3.connect(DB_FILE)
@@ -112,6 +83,40 @@ def list_channels():
     data = c.fetchall()
     conn.close()
     return {"channels": data}
+
+@app.get("/discover.json")
+def discover():
+    server_ip = get_server_ip()
+    return JSONResponse(content={
+        "FriendlyName": "IPTV HDHomeRun",
+        "Manufacturer": "Custom",
+        "ModelNumber": "HDTC-2US",
+        "FirmwareName": "hdhomeruntc_atsc",
+        "FirmwareVersion": "20250802",
+        "DeviceID": "12345678",
+        "DeviceAuth": "testauth",
+        "BaseURL": f"http://{server_ip}:8100",
+        "LineupURL": f"http://{server_ip}:8100/lineup.json"
+    })
+
+@app.get("/lineup.json")
+def lineup():
+    server_ip = get_server_ip()
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("SELECT id, name, url FROM channels")
+    channels = c.fetchall()
+    conn.close()
+
+    lineup = []
+    for channel_id, name, url in channels:
+        lineup.append({
+            "GuideNumber": str(channel_id),
+            "GuideName": name,
+            "URL": f"http://{server_ip}:8100/tuner/{channel_id}"
+        })
+    
+    return JSONResponse(content=lineup)
 
 @app.get("/lineup_status.json")
 def lineup_status():
