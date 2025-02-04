@@ -66,7 +66,7 @@ http://<your-server-ip>:8100/web
 ## Troubleshooting
 
 ### FFmpeg Stream Issues
-If streams fail, ensure:
+If streams fails, ensure:
 - The input M3U URLs are valid and accessible.
 - FFmpeg is installed and properly configured.
 
