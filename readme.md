@@ -47,7 +47,7 @@ services:
 ### Accessing the IPTV Server
 The IPTV server runs on port `8100`. Open your browser and navigate to:
 ```
-http://<your-server-ip>:8100
+http://<your-server-ip>:8100/web
 ```
 
 ### Integrating with Plex
