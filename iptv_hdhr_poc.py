@@ -157,7 +157,7 @@ def parse_epg_files():
 
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-    c.execute("DELETE FROM epg_programs")  # wipe old EPG data
+    c.execute("DELETE FROM epg_programs")  # Wipe old EPG data
 
     for epg_file in epg_files:
         print(f"[INFO] Parsing EPG: {epg_file}")
@@ -165,35 +165,37 @@ def parse_epg_files():
             tree = ET.parse(epg_file)
             root = tree.getroot()
 
-            # Map channel_id -> display_name, plus detect logo from <icon src="..."/>
+            # Map channel_id -> tvg_name -> logo_url
             channel_id_to_display_name = {}
             channel_id_to_logo = {}
 
-            for channel_el in root.findall("channel"):
-                cid = channel_el.get("id", "")
-                disp = channel_el.find("display-name")
-                icon_el = channel_el.find("icon")
+            # Step 1: Fetch logos from the database
+            c.execute("SELECT tvg_name, logo_url FROM channels")
+            for tvg_name, logo_url in c.fetchall():
+                if tvg_name and logo_url:
+                    channel_id_to_logo[tvg_name] = logo_url
 
+            # Step 2: Process <channel> elements in the EPG
+            for channel_el in root.findall("channel"):
+                cid = channel_el.get("id", "")  # Channel ID in the EPG XML
+                disp = channel_el.find("display-name")
                 if disp is not None and disp.text:
                     disp_text = disp.text.strip()
                     channel_id_to_display_name[cid] = disp_text
 
-                    # If there's an <icon src="..."/>, capture it
-                    if icon_el is not None and icon_el.get("src"):
-                        logo_url = icon_el.get("src").strip()
-                        channel_id_to_logo[cid] = logo_url
+                    # Add the logo from the database to the <icon> tag
+                    logo_url = channel_id_to_logo.get(disp_text, "")  # Match by display name
+                    if logo_url:
+                        print(f"[DEBUG] Adding logo URL {logo_url} to channel {disp_text}")
+            
+                        # Ensure <icon> exists and set its src attribute
+                        icon_el = channel_el.find("icon")
+                        if icon_el is None:
+                            icon_el = ET.SubElement(channel_el, "icon")  # Create <icon> if missing
+                        icon_el.set("src", logo_url)  # Ensure src is set
 
-            # Update channels table with EPG logos if they match tvg_name == display_name
-            for cid, disp_name in channel_id_to_display_name.items():
-                logo_url = channel_id_to_logo.get(cid, "")
-                if logo_url:
-                    c.execute("""
-                        UPDATE channels
-                        SET logo_url = ?
-                        WHERE tvg_name = ?
-                    """, (logo_url, disp_name))
 
-            # Insert <programme> elements into epg_programs
+            # Step 3: Insert <programme> elements into the database
             for prog_el in root.findall("programme"):
                 prog_cid = prog_el.get("channel", "")
                 start_time = prog_el.get("start", "").strip()
@@ -213,12 +215,15 @@ def parse_epg_files():
                         (channel_tvg_name, start, stop, title, description)
                         VALUES (?, ?, ?, ?, ?)
                     """, (display_name, start_time, stop_time, title_text, desc_text))
-            
-            conn.commit()
-            print(f"[SUCCESS] EPG loaded from {epg_file}")
+
+            # Save the modified EPG file with added <icon> tags
+            tree.write(epg_file, encoding="utf-8", xml_declaration=True)
+
+            print(f"[SUCCESS] EPG loaded and updated from {epg_file}")
         except Exception as e:
             print(f"[ERROR] Parsing {epg_file} failed: {e}")
 
+    conn.commit()
     conn.close()
 
 parse_epg_files()
