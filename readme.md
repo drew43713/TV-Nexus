@@ -18,12 +18,7 @@ Make sure you have the following installed:
 - **Docker Compose**: [Install Docker Compose](https://docs.docker.com/compose/install/)
 
 ### Installation
-1. Create the following directories for persistent data:
-   ```bash
-   mkdir -p /appdata/plex-iptv
-   ```
-
-2. Set up the Docker Compose file:
+1. Set up the Docker Compose file:
 
 ```yaml
 version: '3.9'
@@ -35,13 +30,15 @@ services:
     ports:
       - "8100:8100"
     volumes:
-      - /appdata/plex-iptv:/app/config  # Persist the SQLite database
+      - /appdata/plex-iptv:/app/config  # Adjust the path based on your setup for persistent storage
 ```
 
-3. Start the server:
+2. Start the server:
    ```bash
    docker-compose up -d
    ```
+
+> **Note**: Update the `volumes` path (`/appdata/plex-iptv:/app/config`) to fit your specific setup. This path determines where the SQLite database and configuration files are stored.
 
 ---
 
