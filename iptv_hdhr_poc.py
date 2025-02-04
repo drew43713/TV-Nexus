@@ -3,6 +3,7 @@ import sqlite3
 import subprocess
 import threading
 import socket
+import queue
 import xml.etree.ElementTree as ET
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import (
@@ -22,6 +23,9 @@ DB_FILE = os.path.join(CONFIG_DIR, "iptv_channels.db")
 os.makedirs(CONFIG_DIR, exist_ok=True)
 os.makedirs(M3U_DIR, exist_ok=True)
 os.makedirs(EPG_DIR, exist_ok=True)
+
+shared_streams = {}
+streams_lock = threading.Lock()
 
 #############################
 # 2) Database Initialization
@@ -285,8 +289,86 @@ def serve_epg():
         return PlainTextResponse("<tv></tv>", media_type="application/xml")
     return FileResponse(epg_files[0], media_type="application/xml")
 
+class SharedStream:
+    def __init__(self, ffmpeg_cmd):
+        self.ffmpeg_cmd = ffmpeg_cmd
+        self.process = subprocess.Popen(
+            ffmpeg_cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            bufsize=10**8
+        )
+        self.subscribers = []  # List of subscriber queues
+        self.lock = threading.Lock()
+        self.is_running = True
+        # Start the thread that reads FFmpeg output and broadcasts to subscribers.
+        self.broadcast_thread = threading.Thread(target=self._broadcast)
+        self.broadcast_thread.daemon = True
+        self.broadcast_thread.start()
+
+    def _broadcast(self):
+        """Continuously read from FFmpeg's stdout and send chunks to all subscribers."""
+        while True:
+            chunk = self.process.stdout.read(1024)
+            if not chunk:
+                print("No chunk received from FFmpeg; ending broadcast.")
+                break  # End of stream
+            #print(f"Broadcasting a chunk of size: {len(chunk)} bytes")
+            with self.lock:
+                for q in self.subscribers:
+                    q.put(chunk)
+        self.is_running = False
+        # Signal end-of-stream to all subscribers.
+        with self.lock:
+            for q in self.subscribers:
+                q.put(None)
+        # Optionally log any FFmpeg errors.
+        stderr_output = self.process.stderr.read()
+        if stderr_output:
+            print("FFmpeg stderr:", stderr_output.decode('utf-8', errors='ignore'))
+
+    def add_subscriber(self):
+        """Add a new subscriber (a queue) for a client."""
+        q = queue.Queue()
+        with self.lock:
+            self.subscribers.append(q)
+        return q
+
+    def remove_subscriber(self, q):
+        """Remove a subscriber. If no subscribers remain, kill the FFmpeg process."""
+        with self.lock:
+            if q in self.subscribers:
+                self.subscribers.remove(q)
+            if not self.subscribers:
+                try:
+                    self.process.kill()
+                except Exception:
+                    pass
+
+def get_shared_stream(channel_id: int, stream_url: str) -> SharedStream:
+    """
+    Return the SharedStream for a channel, creating a new one if needed.
+    This uses the actual stream_url from the database.
+    """
+    ffmpeg_cmd = [
+        "ffmpeg", "-hide_banner", "-loglevel", "error",
+        "-user_agent", "VLC/3.0.20-git LibVLC/3.0.20-git",
+        "-re", "-i", stream_url,
+        "-max_muxing_queue_size", "1024",
+        "-c:v", "copy", "-c:a", "aac",
+        "-preset", "ultrafast",
+        "-f", "mpegts", "pipe:1"
+    ]
+    with streams_lock:
+        if channel_id in shared_streams and shared_streams[channel_id].is_running:
+            return shared_streams[channel_id]
+        # Create a new shared stream for this channel.
+        shared_streams[channel_id] = SharedStream(ffmpeg_cmd)
+        return shared_streams[channel_id]
+
 @app.get("/tuner/{channel_id}")
-def tuner_stream(channel_id: int):
+def tuner_stream(channel_id: int, request: Request):
+    # Look up the channel's stream URL from the database.
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     c.execute("SELECT url FROM channels WHERE id=?", (channel_id,))
@@ -300,40 +382,25 @@ def tuner_stream(channel_id: int):
     if not stream_url:
         raise HTTPException(status_code=404, detail="Invalid channel URL.")
 
-    # FFmpeg command for remuxing/re-encoding
-    ffmpeg_cmd = [
-        "ffmpeg", "-hide_banner", "-loglevel", "error",
-        "-user_agent", "VLC/3.0.20-git LibVLC/3.0.20-git",
-        "-re", "-i", stream_url,
-        "-max_muxing_queue_size", "1024",
-        "-c:v", "copy", "-c:a", "aac",
-        "-preset", "ultrafast",
-        "-f", "mpegts", "pipe:1"
-    ]
+    # Obtain the shared stream object for this channel.
+    shared = get_shared_stream(channel_id, stream_url)
+    subscriber_queue = shared.add_subscriber()
 
-    try:
-        process = subprocess.Popen(
-            ffmpeg_cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            bufsize=10**8
-        )
+    def streamer():
+        try:
+            while True:
+                chunk = subscriber_queue.get()
+                if chunk is None:
+                    break
+                yield chunk
+        finally:
+            # Clean up subscriber when the client disconnects.
+            shared.remove_subscriber(subscriber_queue)
+            with streams_lock:
+                if not shared.subscribers:
+                    shared_streams.pop(channel_id, None)
 
-        # Spawn a thread to read and log stderr
-        thread = threading.Thread(target=read_ffmpeg_stderr, args=(process,))
-        thread.daemon = True
-        thread.start()
-
-        return StreamingResponse(process.stdout, media_type="video/mp2t")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to start FFmpeg: {str(e)}")
-
-def read_ffmpeg_stderr(process):
-    """
-    Background thread: log FFmpeg stderr for debugging.
-    """
-    for line in iter(process.stderr.readline, b""):
-        print("[FFmpeg stderr]", line.decode("utf-8", errors="ignore"))
+    return StreamingResponse(streamer(), media_type="video/mp2t")
 
 @app.get("/web", response_class=HTMLResponse)
 def web_interface(request: Request):
