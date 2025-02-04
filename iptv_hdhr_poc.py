@@ -19,10 +19,12 @@ CONFIG_DIR = "config"
 M3U_DIR = os.path.join(CONFIG_DIR, "m3u")
 EPG_DIR = os.path.join(CONFIG_DIR, "epg")
 DB_FILE = os.path.join(CONFIG_DIR, "iptv_channels.db")
+MODIFIED_EPG_DIR = os.path.join(CONFIG_DIR, "epg_modified")
 
 os.makedirs(CONFIG_DIR, exist_ok=True)
 os.makedirs(M3U_DIR, exist_ok=True)
 os.makedirs(EPG_DIR, exist_ok=True)
+os.makedirs(MODIFIED_EPG_DIR, exist_ok=True)
 
 shared_streams = {}
 streams_lock = threading.Lock()
@@ -161,6 +163,11 @@ def parse_epg_files():
 
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
+
+    # Get the list of tvg_names from M3U channels
+    c.execute("SELECT DISTINCT tvg_name FROM channels WHERE tvg_name IS NOT NULL AND tvg_name != ''")
+    m3u_tvg_names = set(row[0] for row in c.fetchall())
+
     c.execute("DELETE FROM epg_programs")  # Wipe old EPG data
 
     for epg_file in epg_files:
@@ -173,46 +180,55 @@ def parse_epg_files():
             channel_id_to_display_name = {}
             channel_id_to_logo = {}
 
-            # Step 1: Fetch logos from the database
+            # Fetch logos from the database
             c.execute("SELECT tvg_name, logo_url FROM channels")
             for tvg_name, logo_url in c.fetchall():
                 if tvg_name and logo_url:
                     channel_id_to_logo[tvg_name] = logo_url
 
-            # Step 2: Process <channel> elements in the EPG
-            for channel_el in root.findall("channel"):
-                cid = channel_el.get("id", "")  # Channel ID in the EPG XML
-                disp = channel_el.find("display-name")
-                if disp is not None and disp.text:
-                    disp_text = disp.text.strip()
-                    channel_id_to_display_name[cid] = disp_text
+            # Create a set of valid channel IDs based on M3U
+            valid_channel_ids = set()
 
-                    # Add the logo from the database to the <icon> tag
-                    logo_url = channel_id_to_logo.get(disp_text, "")  # Match by display name
+            # **Filter <channel> elements based on M3U tvg_names**
+            for channel_el in list(root.findall("channel")):
+                channel_id = channel_el.get("id", "")
+                display_name_el = channel_el.find("display-name")
+
+                if display_name_el is not None and display_name_el.text:
+                    display_name = display_name_el.text.strip()
+                else:
+                    display_name = ""
+
+                if channel_id in m3u_tvg_names or display_name in m3u_tvg_names:
+                    valid_channel_ids.add(channel_id)
+                    channel_id_to_display_name[channel_id] = display_name
+
+                    # Add logo if available
+                    logo_url = channel_id_to_logo.get(display_name, "")
                     if logo_url:
-                        print(f"[DEBUG] Adding logo URL {logo_url} to channel {disp_text}")
-            
-                        # Ensure <icon> exists and set its src attribute
                         icon_el = channel_el.find("icon")
                         if icon_el is None:
-                            icon_el = ET.SubElement(channel_el, "icon")  # Create <icon> if missing
-                        icon_el.set("src", logo_url)  # Ensure src is set
+                            icon_el = ET.SubElement(channel_el, "icon")
+                        icon_el.set("src", logo_url)
+                else:
+                    root.remove(channel_el)  # Remove unrelated channels
 
+            # **Filter <programme> elements based on valid_channel_ids**
+            for prog_el in list(root.findall("programme")):
+                prog_channel_id = prog_el.get("channel", "")
+                if prog_channel_id not in valid_channel_ids:
+                    root.remove(prog_el)
+                    continue
 
-            # Step 3: Insert <programme> elements into the database
-            for prog_el in root.findall("programme"):
-                prog_cid = prog_el.get("channel", "")
                 start_time = prog_el.get("start", "").strip()
                 stop_time = prog_el.get("stop", "").strip()
-
                 title_el = prog_el.find("title")
                 desc_el = prog_el.find("desc")
 
                 title_text = title_el.text.strip() if title_el is not None and title_el.text else ""
                 desc_text = desc_el.text.strip() if desc_el is not None and desc_el.text else ""
 
-                # The display name for this channel
-                display_name = channel_id_to_display_name.get(prog_cid, "")
+                display_name = channel_id_to_display_name.get(prog_channel_id, "")
                 if display_name:
                     c.execute("""
                         INSERT INTO epg_programs
@@ -220,10 +236,11 @@ def parse_epg_files():
                         VALUES (?, ?, ?, ?, ?)
                     """, (display_name, start_time, stop_time, title_text, desc_text))
 
-            # Save the modified EPG file with added <icon> tags
-            tree.write(epg_file, encoding="utf-8", xml_declaration=True)
+            # Save the modified EPG in a separate directory
+            modified_epg_file = os.path.join(MODIFIED_EPG_DIR, os.path.basename(epg_file))
+            tree.write(modified_epg_file, encoding="utf-8", xml_declaration=True)
+            print(f"[SUCCESS] Filtered EPG saved as {modified_epg_file}")
 
-            print(f"[SUCCESS] EPG loaded and updated from {epg_file}")
         except Exception as e:
             print(f"[ERROR] Parsing {epg_file} failed: {e}")
 
@@ -284,10 +301,20 @@ def lineup_status():
 
 @app.get("/epg.xml")
 def serve_epg():
-    epg_files = find_epg_files()
-    if not epg_files:
-        return PlainTextResponse("<tv></tv>", media_type="application/xml")
-    return FileResponse(epg_files[0], media_type="application/xml")
+    """
+    Serve the modified EPG file instead of the original.
+    If no modified EPG exists, return an empty <tv></tv>.
+    """
+    modified_epg_files = [
+        os.path.join(MODIFIED_EPG_DIR, f)
+        for f in os.listdir(MODIFIED_EPG_DIR)
+        if f.endswith(".xml") or f.endswith(".xmltv")
+    ]
+
+    if modified_epg_files:
+        return FileResponse(modified_epg_files[0], media_type="application/xml")
+    return PlainTextResponse("<tv></tv>", media_type="application/xml")
+
 
 class SharedStream:
     def __init__(self, ffmpeg_cmd):
