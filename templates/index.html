@@ -18,7 +18,7 @@
         th, td {
             padding: 10px;
             border: 1px solid #ccc;
-            vertical-align: middle; /* helps align text and images in cells */
+            vertical-align: middle;
         }
         th {
             background-color: #f8f9fa;
@@ -27,8 +27,8 @@
             background-color: #f2f2f2;
         }
         img.channel-logo {
-            max-height: 40px;  /* Ensures logos won't be too tall */
-            width: auto;       /* Preserves aspect ratio */
+            max-height: 40px;
+            width: auto;
             vertical-align: middle;
         }
         .small-text {
@@ -51,11 +51,9 @@
         </thead>
         <tbody>
             {% for channel in channels %}
+            {% set channel_id = channel[0] | string %}
             <tr>
-                <!-- channel[0] = channel ID -->
                 <td>{{ channel[0] }}</td>
-
-                <!-- channel[4] = logo_url -->
                 <td>
                     {% if channel[4] %}
                         <img src="{{ channel[4] }}" alt="{{ channel[1] }}" class="channel-logo">
@@ -63,22 +61,16 @@
                         <em>No Logo</em>
                     {% endif %}
                 </td>
-
-                <!-- channel[1] = channel name -->
                 <td>{{ channel[1] }}</td>
-
-                <!-- channel[3] = tvg_name (key for epg_map) -->
                 <td>
-                    {% if epg_map[channel[3]] %}
-                        <strong>{{ epg_map[channel[3]]['title'] }}</strong><br>
-                        {{ epg_map[channel[3]]['start'] }} - {{ epg_map[channel[3]]['stop'] }}<br>
-                        <span class="small-text">{{ epg_map[channel[3]]['description'] }}</span>
+                    {% if epg_map[channel_id] %}
+                        <strong>{{ epg_map[channel_id]['title'] }}</strong><br>
+                        {{ epg_map[channel_id]['start'] }} - {{ epg_map[channel_id]['stop'] }}<br>
+                        <span class="small-text">{{ epg_map[channel_id]['description'] }}</span>
                     {% else %}
                         <em>No upcoming programs</em>
                     {% endif %}
                 </td>
-
-                <!-- Tuner link -->
                 <td><a href="/tuner/{{ channel[0] }}" target="_blank">Stream</a></td>
             </tr>
             {% endfor %}
