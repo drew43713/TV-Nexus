@@ -20,4 +20,4 @@ COPY . .
 EXPOSE 8100
 
 # Start the FastAPI application with Uvicorn
-CMD ["uvicorn", "iptv_hdhr_poc:app", "--host", "0.0.0.0", "--port", "8100"]
+CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8100"]
