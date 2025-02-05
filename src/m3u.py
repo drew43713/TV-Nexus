@@ -1,5 +1,6 @@
 import os
 import sqlite3
+import html
 from .config import M3U_DIR, DB_FILE
 from .epg import parse_epg_files
 
@@ -13,7 +14,8 @@ def parse_m3u_attribute(line: str, attr_name: str) -> str:
     end = lower_line.find('"', start)
     if end == -1:
         return ""
-    return line[start:end]
+    # Unescape any HTML/XML entities in the attribute value.
+    return html.unescape(line[start:end])
 
 def find_m3u_files():
     return [
@@ -40,7 +42,9 @@ def load_m3u_files():
         while idx < len(lines):
             line = lines[idx].strip()
             if line.startswith("#EXTINF"):
+                # Extract the channel name part (after the comma)
                 name_part = line.split(",", 1)[-1].strip()
+                # Parse and unescape the attributes from the line.
                 tvg_name = parse_m3u_attribute(line, "tvg-name")
                 tvg_logo = parse_m3u_attribute(line, "tvg-logo")
                 group_title = parse_m3u_attribute(line, "group-title")
