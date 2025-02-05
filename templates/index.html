@@ -1,80 +1,113 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>IPTV Channel List</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 20px;
-            background-color: #f4f4f9;
-            color: #333;
-        }
-        table {
-            width: 100%;
-            border-collapse: collapse;
-        }
-        th, td {
-            padding: 10px;
-            border: 1px solid #ccc;
-            vertical-align: middle;
-        }
-        th {
-            background-color: #f8f9fa;
-        }
-        tr:nth-child(even) {
-            background-color: #f2f2f2;
-        }
-        img.channel-logo {
-            max-height: 40px;
-            width: auto;
-            vertical-align: middle;
-        }
-        .small-text {
-            font-size: 0.9em;
-            color: #666;
-        }
-    </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>IPTV Channel List</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+      background-color: #f4f4f9;
+      color: #333;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    th,
+    td {
+      padding: 10px;
+      border: 1px solid #ccc;
+      vertical-align: middle;
+    }
+    th {
+      background-color: #f8f9fa;
+      cursor: pointer; /* Indicates that the header is clickable for sorting */
+    }
+    tr:nth-child(even) {
+      background-color: #f2f2f2;
+    }
+    img.channel-logo {
+      max-height: 40px;
+      width: auto;
+      vertical-align: middle;
+    }
+    .small-text {
+      font-size: 0.9em;
+      color: #666;
+    }
+    input[type="number"] {
+      width: 60px;
+    }
+  </style>
+
+  <!-- Include the SortTable library for easy column sorting -->
+  <script src="/static/js/sorttable.js"></script>
 </head>
 <body>
-    <h1>IPTV Channel List</h1>
-    <table>
-        <thead>
-            <tr>
-                <th>#</th>
-                <th>Logo</th>
-                <th>Channel Name</th>
-                <th>EPG (Next Program)</th>
-                <th>Stream</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for channel in channels %}
-            {% set channel_id = channel[0] | string %}
-            <tr>
-                <td>{{ channel[0] }}</td>
-                <td>
-                    {% if channel[4] %}
-                        <img src="{{ channel[4] }}" alt="{{ channel[1] }}" class="channel-logo">
-                    {% else %}
-                        <em>No Logo</em>
-                    {% endif %}
-                </td>
-                <td>{{ channel[1] }}</td>
-                <td>
-                    {% if epg_map[channel_id] %}
-                        <strong>{{ epg_map[channel_id]['title'] }}</strong><br>
-                        {{ epg_map[channel_id]['start'] }} - {{ epg_map[channel_id]['stop'] }}<br>
-                        <span class="small-text">{{ epg_map[channel_id]['description'] }}</span>
-                    {% else %}
-                        <em>No upcoming programs</em>
-                    {% endif %}
-                </td>
-                <td><a href="/tuner/{{ channel[0] }}" target="_blank">Stream</a></td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+  <h1>IPTV Channel List</h1>
+
+  <table class="sortable">
+    <thead>
+      <tr>
+        <!-- Add a class to hint SortTable how to sort it. "sorttable_numeric" is useful for numbers. -->
+        <th class="sorttable_numeric">Channel # (Click to Update)</th>
+        <th>Logo</th>
+        <th>Channel Name</th>
+        <th>Group</th>
+        <th>EPG (Next Program)</th>
+        <th>Stream</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for channel in channels %}
+      {% set channel_id = channel[0] | string %}
+      <tr>
+        <td class="sorttable_numeric">
+          <!-- Show the numeric value in a hidden span, so SortTable can parse it properly. -->
+          <span style="display: none;">{{ channel[0] }}</span>
+          <form method="post" action="/update_channel_number">
+            <input type="hidden" name="current_id" value="{{ channel[0] }}" />
+            <input type="number" name="new_id" value="{{ channel[0] }}" />
+            <input type="submit" value="Update" />
+          </form>
+        </td>
+        <td>
+          {% if channel[4] %}
+            <img src="{{ channel[4] }}" alt="{{ channel[1] }}" class="channel-logo" />
+          {% else %}
+            <em>No Logo</em>
+          {% endif %}
+        </td>
+        <td>
+          <!-- Channel Name (usually text, so SortTable can sort it as text) -->
+          {{ channel[1] }}
+        </td>
+        <td>
+          <!-- Group field; if empty, place a dash so there is something to sort on -->
+          {{ channel[5] if channel[5] else "—" }}
+        </td>
+        <td>
+          {% if epg_map[channel_id] %}
+          <strong>{{ epg_map[channel_id]['title'] }}</strong><br />
+          <!-- If you want SortTable to sort by time, you can store an ISO datetime in a hidden span -->
+          <span style="display: none;">
+            {{ epg_map[channel_id]['start'] }} 
+          </span>
+          {{ epg_map[channel_id]['start'] }} - {{ epg_map[channel_id]['stop'] }}<br />
+          <span class="small-text">{{ epg_map[channel_id]['description'] }}</span>
+          {% else %}
+          <em>No upcoming programs</em>
+          {% endif %}
+        </td>
+        <td>
+          <a href="/tuner/{{ channel[0] }}" target="_blank">Stream</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
 </body>
 </html>

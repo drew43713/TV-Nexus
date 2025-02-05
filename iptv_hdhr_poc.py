@@ -5,16 +5,17 @@ import threading
 import socket
 import queue
 import xml.etree.ElementTree as ET
-from fastapi import FastAPI, Request, HTTPException
+
+from fastapi import FastAPI, Request, HTTPException, Form
 from fastapi.responses import (
-    StreamingResponse, JSONResponse, Response, HTMLResponse, PlainTextResponse, FileResponse
+    StreamingResponse, JSONResponse, Response, HTMLResponse,
+    PlainTextResponse, FileResponse, RedirectResponse
 )
 from fastapi.templating import Jinja2Templates
 
-#############################
-# 1) Config & Directories   #
-#############################
+from fastapi.staticfiles import StaticFiles
 
+# -- Configuration and Directory Setup --
 CONFIG_DIR = "config"
 M3U_DIR = os.path.join(CONFIG_DIR, "m3u")
 EPG_DIR = os.path.join(CONFIG_DIR, "epg")
@@ -30,31 +31,36 @@ shared_streams = {}
 streams_lock = threading.Lock()
 
 #############################
-# 2) Database Initialization
+# Database Initialization   #
 #############################
 
 def init_db():
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
 
-    # Create channels table (with logo_url column)
+    # Create the channels table with the new group_title column
     c.execute('''
         CREATE TABLE IF NOT EXISTS channels (
             id INTEGER PRIMARY KEY,
             name TEXT,
             url TEXT,
             tvg_name TEXT,
-            logo_url TEXT
+            logo_url TEXT,
+            group_title TEXT
         )
     ''')
 
-    # Attempt to add logo_url if an older DB existed without it.
+    # In case the table already existed, try to add columns if they do not exist.
     try:
         c.execute('ALTER TABLE channels ADD COLUMN logo_url TEXT')
     except sqlite3.OperationalError:
         pass
+    try:
+        c.execute('ALTER TABLE channels ADD COLUMN group_title TEXT')
+    except sqlite3.OperationalError:
+        pass
 
-    # Create EPG table
+    # Create EPG table (unchanged)
     c.execute('''
         CREATE TABLE IF NOT EXISTS epg_programs (
             id INTEGER PRIMARY KEY,
@@ -68,23 +74,84 @@ def init_db():
     conn.commit()
     conn.close()
 
-init_db()
-
 #############################
-# 3) Parse M3U Files        #
+# EPG Parsing Function      #
 #############################
 
-def find_m3u_files():
-    return [
-        os.path.join(M3U_DIR, f)
-        for f in os.listdir(M3U_DIR)
-        if f.endswith(".m3u")
+def parse_epg_files():
+    epg_files = [
+        os.path.join(EPG_DIR, f)
+        for f in os.listdir(EPG_DIR)
+        if f.endswith(".xml") or f.endswith(".xmltv")
     ]
+    if not epg_files:
+        print("[INFO] No EPG files found.")
+        return
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("DELETE FROM epg_programs")
+    c.execute("SELECT tvg_name, id FROM channels")
+    rows = c.fetchall()
+    tvgname_to_dbid = {row[0]: row[1] for row in rows if row[0]}
+    c.execute("SELECT tvg_name, logo_url FROM channels")
+    logo_map = dict(c.fetchall())
+
+    for epg_file in epg_files:
+        print(f"[INFO] Parsing EPG: {epg_file}")
+        try:
+            tree = ET.parse(epg_file)
+            root = tree.getroot()
+            oldid_to_newid = {}
+            for channel_el in list(root.findall("channel")):
+                old_epg_id = channel_el.get("id", "").strip()
+                display_name_el = channel_el.find("display-name")
+                display_name = display_name_el.text.strip() if (display_name_el is not None and display_name_el.text) else ""
+                new_id = None
+                if old_epg_id in tvgname_to_dbid:
+                    new_id = tvgname_to_dbid[old_epg_id]
+                elif display_name in tvgname_to_dbid:
+                    new_id = tvgname_to_dbid[display_name]
+                if not new_id:
+                    root.remove(channel_el)
+                    continue
+                channel_el.set("id", str(new_id))
+                oldid_to_newid[old_epg_id] = str(new_id)
+                if display_name in logo_map and logo_map[display_name]:
+                    icon_el = channel_el.find("icon")
+                    if icon_el is None:
+                        icon_el = ET.SubElement(channel_el, "icon")
+                    icon_el.set("src", logo_map[display_name])
+            for prog_el in list(root.findall("programme")):
+                prog_channel = prog_el.get("channel", "").strip()
+                if prog_channel not in oldid_to_newid:
+                    root.remove(prog_el)
+                    continue
+                new_prog_channel_id = oldid_to_newid[prog_channel]
+                prog_el.set("channel", new_prog_channel_id)
+                start_time = prog_el.get("start", "").strip()
+                stop_time = prog_el.get("stop", "").strip()
+                title_el = prog_el.find("title")
+                desc_el = prog_el.find("desc")
+                title_text = title_el.text.strip() if (title_el is not None and title_el.text) else ""
+                desc_text = desc_el.text.strip() if (desc_el is not None and desc_el.text) else ""
+                c.execute("""
+                    INSERT INTO epg_programs
+                    (channel_tvg_name, start, stop, title, description)
+                    VALUES (?, ?, ?, ?, ?)
+                """, (new_prog_channel_id, start_time, stop_time, title_text, desc_text))
+            modified_epg_file = os.path.join(MODIFIED_EPG_DIR, os.path.basename(epg_file))
+            tree.write(modified_epg_file, encoding="utf-8", xml_declaration=True)
+            print(f"[SUCCESS] Filtered EPG saved as {modified_epg_file}")
+        except Exception as e:
+            print(f"[ERROR] Parsing {epg_file} failed: {e}")
+    conn.commit()
+    conn.close()
+
+#############################
+# M3U Parsing Function      #
+#############################
 
 def parse_m3u_attribute(line: str, attr_name: str) -> str:
-    """
-    Look for attr_name="..." in the #EXTINF line.
-    """
     lower_line = line.lower()
     key = f'{attr_name.lower()}="'
     start = lower_line.find(key)
@@ -96,6 +163,13 @@ def parse_m3u_attribute(line: str, attr_name: str) -> str:
         return ""
     return line[start:end]
 
+def find_m3u_files():
+    return [
+        os.path.join(M3U_DIR, f)
+        for f in os.listdir(M3U_DIR)
+        if f.endswith(".m3u")
+    ]
+
 def load_m3u_files():
     m3u_files = find_m3u_files()
     if not m3u_files:
@@ -104,7 +178,6 @@ def load_m3u_files():
 
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-    c.execute("DELETE FROM channels")  # Wipe old channels
 
     for m3u_file in m3u_files:
         print(f"[INFO] Loading M3U: {m3u_file}")
@@ -115,149 +188,60 @@ def load_m3u_files():
         while idx < len(lines):
             line = lines[idx].strip()
             if line.startswith("#EXTINF"):
-                # Extract the channel's display name (text after the last comma)
                 name_part = line.split(",", 1)[-1].strip()
-                # Get tvg-name and tvg-logo from the line
                 tvg_name = parse_m3u_attribute(line, "tvg-name")
                 tvg_logo = parse_m3u_attribute(line, "tvg-logo")
-                # Next line is expected to be the stream URL
+                group_title = parse_m3u_attribute(line, "group-title")
                 if (idx + 1) < len(lines):
                     url = lines[idx + 1].strip()
                 else:
                     url = ""
 
-                c.execute("""
-                    INSERT INTO channels (name, url, tvg_name, logo_url)
-                    VALUES (?, ?, ?, ?)
-                """, (name_part, url, tvg_name, tvg_logo))
+                # Use tvg_name if available; otherwise fall back to the channel name.
+                key = tvg_name if tvg_name else name_part
+
+                c.execute("SELECT id, url FROM channels WHERE tvg_name = ? OR name = ?", (key, key))
+                row = c.fetchone()
+                if row:
+                    channel_id, old_url = row
+                    if old_url != url:
+                        c.execute("""
+                            UPDATE channels 
+                            SET url = ?, logo_url = ?, name = ?, group_title = ?
+                            WHERE id = ?
+                        """, (url, tvg_logo, name_part, group_title, channel_id))
+                        print(f"[INFO] Updated channel '{key}' with a new URL.")
+                else:
+                    c.execute("""
+                        INSERT INTO channels (name, url, tvg_name, logo_url, group_title)
+                        VALUES (?, ?, ?, ?, ?)
+                    """, (name_part, url, tvg_name, tvg_logo, group_title))
+                    print(f"[INFO] Inserted new channel '{key}'.")
                 idx += 2
             else:
                 idx += 1
 
     conn.commit()
     conn.close()
-    print("[SUCCESS] M3U loaded!")
 
-load_m3u_files()
-
-#############################
-# 4) Parse EPG Files        #
-#############################
-
-def find_epg_files():
-    return [
-        os.path.join(EPG_DIR, f)
-        for f in os.listdir(EPG_DIR)
-        if f.endswith(".xml") or f.endswith(".xmltv")
-    ]
-
-def parse_epg_files():
-    epg_files = find_epg_files()
-    if not epg_files:
-        print("[INFO] No EPG files found.")
-        return
-
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-
-    # Clear existing EPG data
-    c.execute("DELETE FROM epg_programs")
-
-    # Create a mapping from tvg_name -> db_id from the channels table
-    c.execute("SELECT tvg_name, id FROM channels")
-    rows = c.fetchall()
-    tvgname_to_dbid = {row[0]: row[1] for row in rows if row[0]}
-    
-    # Optional: store channel logos
-    c.execute("SELECT tvg_name, logo_url FROM channels")
-    logo_map = dict(c.fetchall())
-
-    for epg_file in epg_files:
-        print(f"[INFO] Parsing EPG: {epg_file}")
-
-        try:
-            tree = ET.parse(epg_file)
-            root = tree.getroot()
-
-            # Map from old EPG channel ID to the new numeric DB ID
-            oldid_to_newid = {}
-
-            # Process <channel> elements
-            for channel_el in list(root.findall("channel")):
-                old_epg_id = channel_el.get("id", "").strip()
-
-                display_name_el = channel_el.find("display-name")
-                if display_name_el is not None and display_name_el.text:
-                    display_name = display_name_el.text.strip()
-                else:
-                    display_name = ""
-
-                new_id = None
-                if old_epg_id in tvgname_to_dbid:
-                    new_id = tvgname_to_dbid[old_epg_id]
-                elif display_name in tvgname_to_dbid:
-                    new_id = tvgname_to_dbid[display_name]
-
-                if not new_id:
-                    # Remove channel if no match found
-                    root.remove(channel_el)
-                    continue
-
-                # Change the channel id to the new numeric ID
-                channel_el.set("id", str(new_id))
-                oldid_to_newid[old_epg_id] = str(new_id)
-
-                # Optionally update the icon using the logo_map
-                if display_name in logo_map and logo_map[display_name]:
-                    icon_el = channel_el.find("icon")
-                    if icon_el is None:
-                        icon_el = ET.SubElement(channel_el, "icon")
-                    icon_el.set("src", logo_map[display_name])
-
-            # Process <programme> elements
-            for prog_el in list(root.findall("programme")):
-                prog_channel = prog_el.get("channel", "").strip()
-                if prog_channel not in oldid_to_newid:
-                    # Remove programme if channel isn’t mapped
-                    root.remove(prog_el)
-                    continue
-
-                new_prog_channel_id = oldid_to_newid[prog_channel]
-                prog_el.set("channel", new_prog_channel_id)
-
-                start_time = prog_el.get("start", "").strip()
-                stop_time = prog_el.get("stop", "").strip()
-
-                title_el = prog_el.find("title")
-                desc_el = prog_el.find("desc")
-                title_text = title_el.text.strip() if title_el is not None and title_el.text else ""
-                desc_text = desc_el.text.strip() if desc_el is not None and desc_el.text else ""
-
-                c.execute("""
-                    INSERT INTO epg_programs
-                    (channel_tvg_name, start, stop, title, description)
-                    VALUES (?, ?, ?, ?, ?)
-                """, (new_prog_channel_id, start_time, stop_time, title_text, desc_text))
-
-            # Write out the modified EPG to disk
-            modified_epg_file = os.path.join(MODIFIED_EPG_DIR, os.path.basename(epg_file))
-            tree.write(modified_epg_file, encoding="utf-8", xml_declaration=True)
-            print(f"[SUCCESS] Filtered EPG saved as {modified_epg_file}")
-
-        except Exception as e:
-            print(f"[ERROR] Parsing {epg_file} failed: {e}")
-
-    conn.commit()
-    conn.close()
-
-parse_epg_files()
+    print("[INFO] Channels updated. Updating modified EPG file...")
+    parse_epg_files()
 
 #############################
-# 5) Set up FastAPI         #
+# FastAPI App Initialization
 #############################
 
 app = FastAPI()
 templates = Jinja2Templates(directory="templates")
+
+# Mount the static directory so that files in /static/ are served
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+# Registering a startup event to defer execution until all functions are defined.
+@app.on_event("startup")
+def startup_event():
+    init_db()          # Ensure the database and tables are created
+    load_m3u_files()   # Now it's safe to load the M3U files
 
 @app.get("/discover.json")
 def discover(request: Request):
@@ -279,11 +263,9 @@ def lineup(request: Request):
     base_url = f"{request.url.scheme}://{request.client.host}:{request.url.port}"
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-
     c.execute("SELECT id, name, url, logo_url FROM channels")
     rows = c.fetchall()
     conn.close()
-
     lineup_data = []
     for ch_id, ch_name, ch_url, logo_url in rows:
         guide_number = str(ch_id)
@@ -308,9 +290,6 @@ def lineup_status():
 
 @app.get("/epg.xml")
 def serve_epg():
-    """
-    Serve the modified EPG file. If none exist, return an empty <tv></tv>.
-    """
     modified_epg_files = [
         os.path.join(MODIFIED_EPG_DIR, f)
         for f in os.listdir(MODIFIED_EPG_DIR)
@@ -370,9 +349,6 @@ class SharedStream:
                     pass
 
 def get_shared_stream(channel_id: int, stream_url: str) -> SharedStream:
-    """
-    Return (or create) the shared stream for a channel.
-    """
     print(f"Creating shared stream for channel {channel_id} with URL: {stream_url}")
     ffmpeg_cmd = [
         "ffmpeg", "-hide_banner", "-loglevel", "error",
@@ -396,13 +372,11 @@ def tuner_stream(channel_id: int, request: Request):
     c.execute("SELECT url FROM channels WHERE id=?", (channel_id,))
     row = c.fetchone()
     conn.close()
-
     if not row:
         raise HTTPException(status_code=404, detail="Channel not found.")
     stream_url = row[0]
     if not stream_url:
         raise HTTPException(status_code=404, detail="Invalid channel URL.")
-
     shared = get_shared_stream(channel_id, stream_url)
     subscriber_queue = shared.add_subscriber()
 
@@ -423,20 +397,12 @@ def tuner_stream(channel_id: int, request: Request):
 
 @app.get("/web", response_class=HTMLResponse)
 def web_interface(request: Request):
-    """
-    Render a simple web UI that displays channels and the next upcoming EPG program.
-    The lookup for EPG data now uses the numeric channel ID.
-    """
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-
-    # Fetch all channels
-    c.execute("SELECT id, name, url, tvg_name, logo_url FROM channels ORDER BY id")
+    c.execute("SELECT id, name, url, tvg_name, logo_url, group_title FROM channels ORDER BY id")
     channels = c.fetchall()
-
-    # For each channel, fetch the first upcoming program using the channel ID.
     epg_map = {}
-    for ch_id, ch_name, ch_url, ch_tvg_name, ch_logo in channels:
+    for ch_id, ch_name, ch_url, ch_tvg_name, ch_logo, ch_group in channels:
         c.execute("""
             SELECT title, start, stop, description
             FROM epg_programs
@@ -445,7 +411,6 @@ def web_interface(request: Request):
             LIMIT 1
         """, (str(ch_id),))
         program = c.fetchone()
-
         if program:
             epg_map[str(ch_id)] = {
                 "title": program[0],
@@ -455,11 +420,102 @@ def web_interface(request: Request):
             }
         else:
             epg_map[str(ch_id)] = None
-
     conn.close()
-
     return templates.TemplateResponse("index.html", {
         "request": request,
         "channels": channels,
         "epg_map": epg_map
     })
+
+###############################################################################
+# NEW: Functions to update (or swap) channel numbers and update streams accordingly
+###############################################################################
+
+def swap_channel_ids(current_id: int, new_id: int) -> bool:
+    """
+    Update the channel's id in the database.
+    If new_id is already used, swap the two channel ids.
+    Returns True if a swap occurred, else False.
+    """
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("SELECT id FROM channels WHERE id = ?", (current_id,))
+    if not c.fetchone():
+        conn.close()
+        raise HTTPException(status_code=404, detail="Current channel not found.")
+    c.execute("SELECT id FROM channels WHERE id = ?", (new_id,))
+    row_new = c.fetchone()
+    swap = (row_new is not None)
+    if swap:
+        temp_id = -1
+        c.execute("SELECT id FROM channels WHERE id = ?", (temp_id,))
+        if c.fetchone():
+            temp_id = -abs(current_id + new_id)
+        c.execute("UPDATE channels SET id = ? WHERE id = ?", (temp_id, current_id))
+        c.execute("UPDATE channels SET id = ? WHERE id = ?", (current_id, new_id))
+        c.execute("UPDATE channels SET id = ? WHERE id = ?", (new_id, temp_id))
+        c.execute("UPDATE epg_programs SET channel_tvg_name = ? WHERE channel_tvg_name = ?", (str(temp_id), str(current_id)))
+        c.execute("UPDATE epg_programs SET channel_tvg_name = ? WHERE channel_tvg_name = ?", (str(current_id), str(new_id)))
+        c.execute("UPDATE epg_programs SET channel_tvg_name = ? WHERE channel_tvg_name = ?", (str(new_id), str(temp_id)))
+    else:
+        c.execute("UPDATE channels SET id = ? WHERE id = ?", (new_id, current_id))
+        c.execute("UPDATE epg_programs SET channel_tvg_name = ? WHERE channel_tvg_name = ?", (str(new_id), str(current_id)))
+    conn.commit()
+    conn.close()
+    return swap
+
+def update_modified_epg(old_id: int, new_id: int, swap: bool):
+    epg_files = [os.path.join(MODIFIED_EPG_DIR, f) for f in os.listdir(MODIFIED_EPG_DIR)
+                 if f.endswith(".xml") or f.endswith(".xmltv")]
+    if not epg_files:
+        return
+    epg_file = epg_files[0]
+    try:
+        tree = ET.parse(epg_file)
+        root = tree.getroot()
+        if swap:
+            for ch in root.findall("channel"):
+                id_val = ch.get("id")
+                if id_val == str(old_id):
+                    ch.set("id", str(new_id))
+                elif id_val == str(new_id):
+                    ch.set("id", str(old_id))
+            for prog in root.findall("programme"):
+                chan = prog.get("channel")
+                if chan == str(old_id):
+                    prog.set("channel", str(new_id))
+                elif chan == str(new_id):
+                    prog.set("channel", str(old_id))
+        else:
+            for ch in root.findall("channel"):
+                if ch.get("id") == str(old_id):
+                    ch.set("id", str(new_id))
+            for prog in root.findall("programme"):
+                if prog.get("channel") == str(old_id):
+                    prog.set("channel", str(new_id))
+        tree.write(epg_file, encoding="utf-8", xml_declaration=True)
+    except Exception as e:
+        print("Error updating modified EPG file:", e)
+
+def clear_shared_stream(channel_id: int):
+    """
+    Kill and remove the shared stream for a given channel id (if one exists).
+    """
+    with streams_lock:
+        if channel_id in shared_streams:
+            try:
+                shared_streams[channel_id].process.kill()
+            except Exception:
+                pass
+            del shared_streams[channel_id]
+
+@app.post("/update_channel_number")
+def update_channel_number(current_id: int = Form(...), new_id: int = Form(...)):
+    if current_id == new_id:
+        return RedirectResponse(url="/web", status_code=303)
+    swap = swap_channel_ids(current_id, new_id)
+    update_modified_epg(current_id, new_id, swap)
+    # Clear any active shared streams for these channel IDs so new streams are created.
+    clear_shared_stream(current_id)
+    clear_shared_stream(new_id)
+    return RedirectResponse(url="/web", status_code=303)
