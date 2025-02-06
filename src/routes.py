@@ -34,10 +34,15 @@ def discover(request: Request):
     })
 
 def get_local_ip():
+    # If running in Docker, you can supply the host IP via an environment variable.
+    host_ip = os.getenv("HOST_IP")
+    if host_ip:
+        return host_ip
+
+    # Otherwise, try the usual method.
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
-        # Connect to a public IP address. The connection won't actually be established,
-        # but it forces the OS to choose the network interface.
+        # This doesn't actually establish a connection.
         s.connect(("8.8.8.8", 80))
         ip = s.getsockname()[0]
     except Exception:
