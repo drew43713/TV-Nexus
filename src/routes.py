@@ -2,7 +2,9 @@ import os
 import gzip
 import socket
 import sqlite3
-from fastapi import APIRouter, Request, HTTPException, Form
+import subprocess
+import json
+from fastapi import APIRouter, Request, HTTPException, Form, Query
 from fastapi.responses import (
     JSONResponse, FileResponse, PlainTextResponse, StreamingResponse,
     HTMLResponse, RedirectResponse
@@ -319,3 +321,42 @@ def get_current_program(channel_id: int):
             "stop": "",
             "description": ""
         })
+
+@router.get("/probe_stream")
+def probe_stream(channel_id: int = Query(..., description="The channel ID to probe")):
+    """
+    Probe the stream for a given channel using ffprobe and return technical information.
+    """
+    # Lookup the channel URL from the database.
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("SELECT url FROM channels WHERE id = ?", (channel_id,))
+    row = c.fetchone()
+    conn.close()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Channel not found.")
+    
+    stream_url = row[0]
+    if not stream_url:
+        raise HTTPException(status_code=400, detail="Invalid stream URL for channel.")
+
+    # Build the ffprobe command.
+    cmd = [
+        "ffprobe",
+        "-v", "quiet",
+        "-print_format", "json",
+        "-show_format",
+        "-show_streams",
+        stream_url
+    ]
+    try:
+        # Run ffprobe and capture the output.
+        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+        output = result.stdout.decode("utf-8")
+        ffprobe_data = json.loads(output)
+        return JSONResponse(ffprobe_data)
+    except subprocess.CalledProcessError as e:
+        raise HTTPException(status_code=500, detail=f"ffprobe error: {e.stderr.decode('utf-8')}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

@@ -5,19 +5,73 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>IPTV Channel List</title>
   <style>
-    body { font-family: Arial, sans-serif; background-color: #f4f4f9; color: #333; }
-    table { width: 100%; border-collapse: collapse; }
-    th, td { padding: 10px; border: 1px solid #ccc; text-align: center; }
-    th { background-color: #f8f9fa; }
-    tr:nth-child(even) { background-color: #f2f2f2; }
-    img.channel-logo { max-height: 40px; width: auto; }
-    input.channel-number { width: 50px; text-align: center; border: 1px solid #ccc; padding: 5px; }
-    button.edit-button, button.epg-save-button { padding: 5px 10px; cursor: pointer; }
-    .modal { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 20px; box-shadow: 0 0 10px rgba(0,0,0,0.5); z-index: 1000; }
-    .modal-content { text-align: center; }
-    .modal img { max-width: 100px; display: block; margin: auto; }
-    .modal button { margin-top: 10px; padding: 5px 10px; }
-    .overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.5); z-index: 999; }
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #f4f4f9;
+      color: #333;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    th, td {
+      padding: 10px;
+      border: 1px solid #ccc;
+      text-align: center;
+    }
+    th {
+      background-color: #f8f9fa;
+    }
+    tr:nth-child(even) {
+      background-color: #f2f2f2;
+    }
+    img.channel-logo {
+      max-height: 40px;
+      width: auto;
+    }
+    input.channel-number {
+      width: 50px;
+      text-align: center;
+      border: 1px solid #ccc;
+      padding: 5px;
+    }
+    button.edit-button, button.epg-save-button, button.probe-button {
+      padding: 5px 10px;
+      cursor: pointer;
+    }
+    .modal {
+      display: none;
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: white;
+      padding: 20px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.5);
+      z-index: 1000;
+    }
+    .modal-content {
+      text-align: center;
+    }
+    .modal img {
+      max-width: 100px;
+      display: block;
+      margin: auto;
+    }
+    .modal button {
+      margin-top: 10px;
+      padding: 5px 10px;
+    }
+    .overlay {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.5);
+      z-index: 999;
+    }
     /* Loading overlay style */
     #loading {
       display: none;
@@ -32,6 +86,18 @@
       padding-top: 20%;
       font-size: 24px;
       color: #333;
+    }
+    /* Probe results area */
+    #probe-results {
+      margin-top: 15px;
+      text-align: left;
+      max-height: 200px;
+      overflow-y: auto;
+      border: 1px solid #ccc;
+      padding: 10px;
+      white-space: pre-wrap;
+      font-family: monospace;
+      font-size: 14px;
     }
   </style>
 </head>
@@ -55,7 +121,6 @@
           data-epg="{{ epg_map[channel[0]|string]['title'] if channel[0]|string in epg_map else 'No Program' }}"
           data-epg-entry="{{ epg_entry_map[channel[0]|string] if channel[0]|string in epg_entry_map else 'Unknown' }}"
           data-stream-url="{{ stream_map[channel[0]|string] if channel[0]|string in stream_map else 'N/A' }}">
-          
         <!-- Editable Channel Number -->
         <td>
           <input type="number" class="channel-number" 
@@ -64,7 +129,6 @@
                  onblur="updateChannelNumber(this)"
                  onkeydown="handleEnter(event, this)">
         </td>
-
         <td><img src="{{ channel[4] }}" class="channel-logo" /></td>
         <td>{{ channel[1] }}</td>
         <td>{{ epg_map[channel[0]|string]['title'] if channel[0]|string in epg_map else 'No Program' }}</td>
@@ -91,8 +155,13 @@
         <label for="epg-select"><strong>Select EPG Entry:</strong></label>
         <select id="epg-select"></select>
       </p>
-      <!-- Save button for updating the EPG entry -->
+      <!-- Save EPG Button -->
       <button class="epg-save-button" onclick="saveEpgEntry()">Save EPG</button>
+      <!-- New Probe Stream Button -->
+      <button class="probe-button" onclick="probeStream()">Probe Stream</button>
+      <!-- Area to display probe results -->
+      <div id="probe-results"></div>
+      
       <button onclick="closeModal()">Close</button>
     </div>
   </div>
@@ -160,6 +229,9 @@
       document.getElementById('modal-stream-url').innerText = streamUrl;
       document.getElementById('modal-stream-url').href = streamUrl;
 
+      // Clear any previous probe results.
+      document.getElementById('probe-results').innerText = "";
+
       // Load available EPG entries from the API endpoint.
       loadAvailableEpgEntries(epgEntry);
 
@@ -215,7 +287,6 @@
         return;
       }
 
-      // Show the loading overlay while the update is in progress.
       showLoading();
 
       const formData = new FormData();
@@ -229,16 +300,14 @@
       .then(response => response.json())
       .then(result => {
         if (result.success) {
-          // After the update, fetch the current programme data for this channel.
+          // After updating, fetch the current programme for this channel.
           fetch(`/api/current_program?channel_id=${currentChannelId}`)
             .then(resp => resp.json())
             .then(data => {
               // Update the table row immediately.
               const row = document.querySelector(`tr[data-channel="${currentChannelId}"]`);
               if (row) {
-                // Update the data attribute for the EPG entry.
                 row.setAttribute('data-epg-entry', newEpgEntry);
-                // Update the "Current Program" cell (assumed to be the 4th cell).
                 const cells = row.getElementsByTagName("td");
                 if (cells.length >= 4) {
                   cells[3].innerText = data.title;
@@ -262,6 +331,27 @@
         hideLoading();
         alert("Error updating EPG entry: " + error);
       });
+    }
+
+    // Function to probe the stream for the current channel.
+    function probeStream() {
+      if (!currentChannelId) {
+        alert("Channel id not set");
+        return;
+      }
+      const probeDiv = document.getElementById("probe-results");
+      probeDiv.innerText = "Probing stream, please wait...";
+      
+      fetch(`/probe_stream?channel_id=${currentChannelId}`)
+        .then(response => response.json())
+        .then(data => {
+          // Format the probe data for display.
+          probeDiv.innerText = JSON.stringify(data, null, 2);
+        })
+        .catch(error => {
+          probeDiv.innerText = "Error probing stream: " + error;
+          console.error("Error probing stream:", error);
+        });
     }
   </script>
 
