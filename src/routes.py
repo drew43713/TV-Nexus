@@ -221,7 +221,6 @@ def get_epg_entries():
                     display_el = channel_el.find("display-name")
                     if display_el is not None and display_el.text:
                         epg_entries.add(display_el.text.strip())
-                break
         # Return the sorted list
         return JSONResponse(sorted(list(epg_entries)))
     except Exception as e:

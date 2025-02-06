@@ -10,6 +10,10 @@ def parse_epg_files():
     Parse all EPG files from EPG_DIR (which may be .xml, .xmltv, or .gz)
     and merge them into a single combined file (EPG.xml) in MODIFIED_EPG_DIR.
     Only channels that match the database (using tvg_name) are kept.
+    The output channels will contain only:
+      - the channel id (as an attribute),
+      - a single <icon> element (with its src attribute), and
+      - a <display-name> element.
     """
     # Gather all EPG files.
     epg_files = [
@@ -49,14 +53,12 @@ def parse_epg_files():
         try:
             # Open file with proper handling for gzipped files.
             with open(epg_file, "rb") as f:
-                # Check first two bytes to decide if file is gzipped.
                 magic = f.read(2)
                 f.seek(0)
                 if magic == b'\x1f\x8b':
                     tree = ET.parse(gzip.open(f))
                 else:
                     tree = ET.parse(f)
-
             root = tree.getroot()
 
             # Build a mapping for channels in this file:
@@ -66,11 +68,10 @@ def parse_epg_files():
 
             # Process each <channel> element.
             for channel_el in list(root.findall("channel")):
-                # Get the channel's original id.
                 old_epg_id = channel_el.get("id", "").strip()
                 unescaped_old_epg_id = html.unescape(old_epg_id)
 
-                # Retrieve the display-name (if present).
+                # Retrieve the display-name element.
                 display_name_el = channel_el.find("display-name")
                 display_name = (
                     html.unescape(display_name_el.text.strip())
@@ -89,21 +90,30 @@ def parse_epg_files():
                     # Skip this channel if no matching DB channel is found.
                     continue
 
-                # Use the new id for the channel.
-                channel_el.set("id", str(new_id))
+                # Create a new channel element with only the desired data.
+                new_channel_el = ET.Element("channel", id=str(new_id))
+
+                # Add a single <icon> element if there's a matching logo.
+                if display_name in logo_map and logo_map[display_name]:
+                    icon_el = ET.Element("icon", src=logo_map[display_name])
+                    new_channel_el.append(icon_el)
+
+                # Add the <display-name> element.
+                if display_name:
+                    new_display_el = ET.Element("display-name")
+                    new_display_el.text = display_name
+                    # Optionally copy the "lang" attribute if present.
+                    if display_name_el is not None and "lang" in display_name_el.attrib:
+                        new_display_el.set("lang", display_name_el.attrib["lang"])
+                    new_channel_el.append(new_display_el)
+
+                # Record mapping for programmes later.
                 file_channel_mapping[old_epg_id] = str(new_id)
 
-                # If this channel is not already added to the combined file, add it.
+                # Add channel to combined XML if not already added.
                 if str(new_id) not in combined_channels:
-                    # If there's a matching logo, update or add the <icon> element.
-                    if display_name in logo_map and logo_map[display_name]:
-                        icon_el = channel_el.find("icon")
-                        if icon_el is None:
-                            icon_el = ET.Element("icon")
-                            channel_el.append(icon_el)
-                        icon_el.set("src", logo_map[display_name])
-                    combined_root.append(channel_el)
-                    combined_channels[str(new_id)] = channel_el
+                    combined_root.append(new_channel_el)
+                    combined_channels[str(new_id)] = new_channel_el
 
             # Process each <programme> element.
             for prog_el in list(root.findall("programme")):
@@ -111,7 +121,6 @@ def parse_epg_files():
                 if prog_channel not in file_channel_mapping:
                     # Skip programme if its channel did not match.
                     continue
-                # Update programme's channel attribute.
                 new_prog_channel_id = file_channel_mapping[prog_channel]
                 prog_el.set("channel", new_prog_channel_id)
 
