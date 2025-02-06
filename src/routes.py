@@ -1,5 +1,6 @@
 import os
 import gzip
+import socket
 import sqlite3
 from fastapi import APIRouter, Request, HTTPException, Form
 from fastapi.responses import (
@@ -32,14 +33,33 @@ def discover(request: Request):
         "LineupURL": f"{base_url}/lineup.json"
     })
 
+def get_local_ip():
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        # Connect to a public IP address. The connection won't actually be established,
+        # but it forces the OS to choose the network interface.
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+    except Exception:
+        ip = "127.0.0.1"
+    finally:
+        s.close()
+    return ip
+
 @router.get("/lineup.json")
 def lineup(request: Request):
-    base_url = f"{request.url.scheme}://{request.client.host}:{request.url.port}"
+    # Get the server's IP address using our helper function.
+    server_ip = get_local_ip()
+    
+    # Build the base URL using the server's IP address.
+    base_url = f"{request.url.scheme}://{server_ip}:{request.url.port}"
+    
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     c.execute("SELECT id, name, url, logo_url FROM channels")
     rows = c.fetchall()
     conn.close()
+    
     lineup_data = []
     for ch_id, ch_name, ch_url, logo_url in rows:
         guide_number = str(ch_id)
@@ -51,6 +71,7 @@ def lineup(request: Request):
             "URL": f"{base_url}/tuner/{ch_id}"
         }
         lineup_data.append(channel_obj)
+    
     return JSONResponse(lineup_data)
 
 @router.get("/lineup_status.json")
@@ -105,29 +126,36 @@ def tuner_stream(channel_id: int, request: Request):
 
     return StreamingResponse(streamer(), media_type="video/mp2t")
 
+from datetime import datetime
+
 @router.get("/web", response_class=HTMLResponse)
 def web_interface(request: Request):
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     c.execute("SELECT id, name, url, tvg_name, logo_url, group_title FROM channels ORDER BY id")
     channels = c.fetchall()
+    server_ip = get_local_ip()
 
     epg_map = {}
     epg_entry_map = {}  # Store which EPG entry is assigned to each channel
     stream_map = {}  # Store the stream URL for each channel
 
     # Get base URL dynamically
-    base_url = f"{request.url.scheme}://{request.client.host}:{request.url.port}"
+    base_url = f"{request.url.scheme}://{server_ip}:{request.url.port}"
+    
+    # Format the current UTC time as in the database.  
+    # For example, if the DB value is like "20250210220000 +0000" (YYYYMMDDHHMMSS +0000):
+    now = datetime.utcnow().strftime("%Y%m%d%H%M%S") + " +0000"
 
     for ch_id, ch_name, ch_url, ch_tvg_name, ch_logo, ch_group in channels:
-        # Fetch EPG program details
+        # Fetch the current EPG program details by selecting the one that is "active" now.
         c.execute("""
             SELECT title, start, stop, description
             FROM epg_programs
-            WHERE channel_tvg_name = ?
-            ORDER BY start ASC
+            WHERE channel_tvg_name = ? AND start <= ? AND stop > ?
+            ORDER BY start DESC
             LIMIT 1
-        """, (str(ch_id),))
+        """, (str(ch_id), now, now))
         program = c.fetchone()
 
         if program:
