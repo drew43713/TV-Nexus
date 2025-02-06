@@ -44,7 +44,7 @@ def load_m3u_files():
             if line.startswith("#EXTINF"):
                 # Extract the channel name part (after the comma)
                 name_part = line.split(",", 1)[-1].strip()
-                # Parse and unescape the attributes from the line.
+                # Parse attributes from the line.
                 tvg_name = parse_m3u_attribute(line, "tvg-name")
                 tvg_logo = parse_m3u_attribute(line, "tvg-logo")
                 group_title = parse_m3u_attribute(line, "group-title")
@@ -53,25 +53,23 @@ def load_m3u_files():
                 else:
                     url = ""
 
-                # Use tvg_name if available; otherwise fall back to the channel name.
+                # Use original tvg_name if available; otherwise fall back to channel name.
                 key = tvg_name if tvg_name else name_part
 
-                c.execute("SELECT id, url FROM channels WHERE tvg_name = ? OR name = ?", (key, key))
+                # Look up the channel using the original_tvg_name.
+                c.execute("SELECT id, url FROM channels WHERE original_tvg_name = ?", (key,))
                 row = c.fetchone()
                 if row:
                     channel_id, old_url = row
                     if old_url != url:
-                        c.execute("""
-                            UPDATE channels 
-                            SET url = ?, logo_url = ?, name = ?, group_title = ?
-                            WHERE id = ?
-                        """, (url, tvg_logo, name_part, group_title, channel_id))
+                        # Only update the URL.
+                        c.execute("UPDATE channels SET url = ? WHERE id = ?", (url, channel_id))
                         print(f"[INFO] Updated channel '{key}' with a new URL.")
                 else:
                     c.execute("""
-                        INSERT INTO channels (name, url, tvg_name, logo_url, group_title)
-                        VALUES (?, ?, ?, ?, ?)
-                    """, (name_part, url, tvg_name, tvg_logo, group_title))
+                        INSERT INTO channels (name, url, tvg_name, original_tvg_name, logo_url, group_title)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                    """, (name_part, url, tvg_name, tvg_name, tvg_logo, group_title))
                     print(f"[INFO] Inserted new channel '{key}'.")
                 idx += 2
             else:

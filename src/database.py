@@ -6,25 +6,30 @@ def init_db():
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
 
-    # Create the channels table with the new group_title column
+    # Create the channels table with the new original_tvg_name column.
     c.execute('''
         CREATE TABLE IF NOT EXISTS channels (
             id INTEGER PRIMARY KEY,
             name TEXT,
             url TEXT,
             tvg_name TEXT,
+            original_tvg_name TEXT,
             logo_url TEXT,
             group_title TEXT
         )
     ''')
 
-    # In case the table already existed, try to add columns if they do not exist.
+    # In case the table already existed, try to add new columns if they do not exist.
     try:
         c.execute('ALTER TABLE channels ADD COLUMN logo_url TEXT')
     except sqlite3.OperationalError:
         pass
     try:
         c.execute('ALTER TABLE channels ADD COLUMN group_title TEXT')
+    except sqlite3.OperationalError:
+        pass
+    try:
+        c.execute('ALTER TABLE channels ADD COLUMN original_tvg_name TEXT')
     except sqlite3.OperationalError:
         pass
 

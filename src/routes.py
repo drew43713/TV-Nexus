@@ -256,26 +256,36 @@ def get_epg_entries():
 
 @router.post("/update_epg_entry")
 def update_epg_entry(channel_id: int = Form(...), new_epg_entry: str = Form(...)):
+    """
+    Update the channel's tvg_name (used for matching raw EPG data) in the database,
+    then re-parse the raw EPG files so that the modified EPG file is rebuilt with
+    the correct programme data. The channel's display name and logo remain as in the
+    original database entry.
+    """
     try:
         conn = sqlite3.connect(DB_FILE)
         c = conn.cursor()
-        # Get the current EPG entry for the channel (assumed stored in tvg_name)
+        # Retrieve the current tvg_name.
         c.execute("SELECT tvg_name FROM channels WHERE id = ?", (channel_id,))
         row = c.fetchone()
         if not row:
             conn.close()
             return JSONResponse({"success": False, "error": "Channel not found."})
-        current_epg_entry = row[0]
-        
-        # Update the channel with the new epg entry
+        current_tvg_name = row[0]
+
+        # Update the channel's tvg_name with the new value.
         c.execute("UPDATE channels SET tvg_name = ? WHERE id = ?", (new_epg_entry, channel_id))
         conn.commit()
         conn.close()
-        
-        # Optionally update the combined modified EPG file.
-        # You might need to adjust update_modified_epg to handle updating epg entries.
-        update_modified_epg(current_epg_entry, new_epg_entry, swap=False)
-        
+
+        # Re-parse the raw EPG files to rebuild the modified EPG file with the updated matching key.
+        from .epg import parse_epg_files
+        parse_epg_files()
+
+        return JSONResponse({"success": True})
+    except Exception as e:
+        return JSONResponse({"success": False, "error": str(e)})
+
         return JSONResponse({"success": True})
     except Exception as e:
         return JSONResponse({"success": False, "error": str(e)})
