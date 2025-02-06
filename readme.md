@@ -29,6 +29,8 @@ services:
       context: https://github.com/drew43713/plex-iptv.git
     ports:
       - "8100:8100"
+	environment:
+      - HOST_IP=your.host.ip
     volumes:
       - /appdata/plex-iptv:/app/config  # Adjust the path based on your setup for persistent storage
 ```
@@ -39,7 +41,7 @@ services:
    ```
 
 > **Note**: Update the `volumes` path (`/appdata/plex-iptv:/app/config`) to fit your specific setup. This path determines where the SQLite database and configuration files are stored.
-
+> **Note**: You must provide your host ip address in the environment variable otherwise the app will choose the docker ip instead of the lan ip.
 ---
 
 ## Usage
