@@ -2,112 +2,220 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>IPTV Channel List</title>
   <style>
-    body {
-      font-family: Arial, sans-serif;
-      margin: 20px;
-      background-color: #f4f4f9;
-      color: #333;
-    }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-    }
-    th,
-    td {
-      padding: 10px;
-      border: 1px solid #ccc;
-      vertical-align: middle;
-    }
-    th {
-      background-color: #f8f9fa;
-      cursor: pointer; /* Indicates that the header is clickable for sorting */
-    }
-    tr:nth-child(even) {
-      background-color: #f2f2f2;
-    }
-    img.channel-logo {
-      max-height: 40px;
-      width: auto;
-      vertical-align: middle;
-    }
-    .small-text {
-      font-size: 0.9em;
-      color: #666;
-    }
-    input[type="number"] {
-      width: 60px;
-    }
+    body { font-family: Arial, sans-serif; background-color: #f4f4f9; color: #333; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 10px; border: 1px solid #ccc; text-align: center; }
+    th { background-color: #f8f9fa; }
+    tr:nth-child(even) { background-color: #f2f2f2; }
+    img.channel-logo { max-height: 40px; width: auto; }
+    input.channel-number { width: 50px; text-align: center; border: 1px solid #ccc; padding: 5px; }
+    button.edit-button, button.epg-save-button { padding: 5px 10px; cursor: pointer; }
+    .modal { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 20px; box-shadow: 0 0 10px rgba(0,0,0,0.5); z-index: 1000; }
+    .modal-content { text-align: center; }
+    .modal img { max-width: 100px; display: block; margin: auto; }
+    .modal button { margin-top: 10px; padding: 5px 10px; }
+    .overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.5); z-index: 999; }
   </style>
-
-  <!-- Include the SortTable library for easy column sorting -->
-  <script src="/static/js/sorttable.js"></script>
 </head>
 <body>
   <h1>IPTV Channel List</h1>
-
-  <table class="sortable">
+  <table>
     <thead>
       <tr>
-        <!-- Add a class to hint SortTable how to sort it. "sorttable_numeric" is useful for numbers. -->
-        <th class="sorttable_numeric">Channel # (Click to Update)</th>
+        <th>Channel #</th>
         <th>Logo</th>
         <th>Channel Name</th>
-        <th>Group</th>
         <th>EPG (Next Program)</th>
-        <th>Stream</th>
+        <th>Edit</th>
       </tr>
     </thead>
     <tbody>
       {% for channel in channels %}
-      {% set channel_id = channel[0] | string %}
-      <tr>
-        <td class="sorttable_numeric">
-          <!-- Show the numeric value in a hidden span, so SortTable can parse it properly. -->
-          <span style="display: none;">{{ channel[0] }}</span>
-          <form method="post" action="/update_channel_number">
-            <input type="hidden" name="current_id" value="{{ channel[0] }}" />
-            <input type="number" name="new_id" value="{{ channel[0] }}" />
-            <input type="submit" value="Update" />
-          </form>
-        </td>
+      <tr data-channel="{{ channel[0] }}" 
+          data-name="{{ channel[1] }}" 
+          data-logo="{{ channel[4] }}" 
+          data-epg="{{ epg_map[channel[0]|string]['title'] if channel[0]|string in epg_map else 'No Program' }}"
+          data-epg-entry="{{ epg_entry_map[channel[0]|string] if channel[0]|string in epg_entry_map else 'Unknown' }}"
+          data-stream-url="{{ stream_map[channel[0]|string] if channel[0]|string in stream_map else 'N/A' }}">
+          
+        <!-- Editable Channel Number -->
         <td>
-          {% if channel[4] %}
-            <img src="{{ channel[4] }}" alt="{{ channel[1] }}" class="channel-logo" />
-          {% else %}
-            <em>No Logo</em>
-          {% endif %}
+          <input type="number" class="channel-number" 
+                 value="{{ channel[0] }}" 
+                 data-old-value="{{ channel[0] }}"
+                 onblur="updateChannelNumber(this)"
+                 onkeydown="handleEnter(event, this)">
         </td>
+
+        <td><img src="{{ channel[4] }}" class="channel-logo" /></td>
+        <td>{{ channel[1] }}</td>
+        <td>{{ epg_map[channel[0]|string]['title'] if channel[0]|string in epg_map else 'No Program' }}</td>
         <td>
-          <!-- Channel Name (usually text, so SortTable can sort it as text) -->
-          {{ channel[1] }}
-        </td>
-        <td>
-          <!-- Group field; if empty, place a dash so there is something to sort on -->
-          {{ channel[5] if channel[5] else "—" }}
-        </td>
-        <td>
-          {% if epg_map[channel_id] %}
-          <strong>{{ epg_map[channel_id]['title'] }}</strong><br />
-          <!-- If you want SortTable to sort by time, you can store an ISO datetime in a hidden span -->
-          <span style="display: none;">
-            {{ epg_map[channel_id]['start'] }} 
-          </span>
-          {{ epg_map[channel_id]['start'] }} - {{ epg_map[channel_id]['stop'] }}<br />
-          <span class="small-text">{{ epg_map[channel_id]['description'] }}</span>
-          {% else %}
-          <em>No upcoming programs</em>
-          {% endif %}
-        </td>
-        <td>
-          <a href="/tuner/{{ channel[0] }}" target="_blank">Stream</a>
+          <!-- Dedicated Edit Button to open the modal -->
+          <button class="edit-button" onclick="handleEditButtonClick(event, this)">Edit</button>
         </td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
+  
+  <div class="overlay" id="overlay" onclick="closeModal()"></div>
+  <div class="modal" id="modal">
+    <div class="modal-content">
+      <h2 id="modal-title"></h2>
+      <img id="modal-logo" src="" alt="Channel Logo" />
+      <p><strong>Channel Number:</strong> <span id="modal-channel"></span></p>
+      <p><strong>Current Program:</strong> <span id="modal-epg"></span></p>
+      <p><strong>Stream URL:</strong> <a id="modal-stream-url" href="#" target="_blank">Click to Stream</a></p>
+      
+      <!-- New EPG selection dropdown -->
+      <p>
+        <label for="epg-select"><strong>Select EPG Entry:</strong></label>
+        <select id="epg-select"></select>
+      </p>
+      <!-- Save button for updating the EPG entry -->
+      <button class="epg-save-button" onclick="saveEpgEntry()">Save EPG</button>
+      <button onclick="closeModal()">Close</button>
+    </div>
+  </div>
 
+  <script>
+    function handleEnter(event, input) {
+      if (event.key === "Enter") {
+        input.blur();
+      }
+    }
+
+    function updateChannelNumber(input) {
+      let oldValue = input.getAttribute('data-old-value');
+      let newValue = input.value.trim();
+
+      if (oldValue === newValue || newValue === "") {
+        input.value = oldValue;
+        return;
+      }
+
+      let formData = new FormData();
+      formData.append("current_id", oldValue);
+      formData.append("new_id", newValue);
+
+      fetch("/update_channel_number", {
+        method: "POST",
+        body: formData
+      })
+      .then(response => {
+        if (response.redirected) {
+          window.location.href = response.url;
+        } else {
+          return response.text();
+        }
+      })
+      .catch(error => {
+        alert("Error updating channel number: " + error);
+        input.value = oldValue;
+      });
+    }
+
+    // Global variable to keep track of the channel being edited.
+    let currentChannelId = null;
+
+    function handleEditButtonClick(event, button) {
+      event.stopPropagation();
+      const row = button.closest('tr');
+
+      const channelId = row.getAttribute('data-channel');
+      const channelName = row.getAttribute('data-name');
+      const logo = row.getAttribute('data-logo');
+      const epgTitle = row.getAttribute('data-epg');
+      const epgEntry = row.getAttribute('data-epg-entry');  
+      const streamUrl = row.getAttribute('data-stream-url');  
+
+      currentChannelId = channelId; // save channel id for later use
+
+      document.getElementById('modal-title').innerText = channelName;
+      document.getElementById('modal-logo').src = logo;
+      document.getElementById('modal-channel').innerText = channelId;
+      document.getElementById('modal-epg').innerText = epgTitle;
+      document.getElementById('modal-stream-url').innerText = streamUrl;
+      document.getElementById('modal-stream-url').href = streamUrl;
+
+      // Load available EPG entries from our API endpoint
+      loadAvailableEpgEntries(epgEntry);
+
+      document.getElementById('modal').style.display = 'block';
+      document.getElementById('overlay').style.display = 'block';
+    }
+
+    function closeModal() {
+      document.getElementById('modal').style.display = 'none';
+      document.getElementById('overlay').style.display = 'none';
+    }
+
+    // Function to load available EPG entries into the dropdown.
+    // defaultEntry should be the current channel's epg entry (e.g. its tvg_name)
+    function loadAvailableEpgEntries(defaultEntry) {
+      fetch('/api/epg_entries')
+        .then(response => response.json())
+        .then(data => {
+          const select = document.getElementById('epg-select');
+          select.innerHTML = ''; // Clear previous options
+
+          data.forEach(epgEntry => {
+            const option = document.createElement('option');
+            option.value = epgEntry;
+            option.text = epgEntry;
+            // Select the option that matches the channel's current epg entry.
+            if (epgEntry === defaultEntry) {
+              option.selected = true;
+            }
+            select.appendChild(option);
+          });
+        })
+        .catch(error => {
+          console.error("Error loading EPG entries:", error);
+        });
+    }
+
+    // Called when the user clicks the "Save EPG" button in the modal.
+    function saveEpgEntry() {
+      const select = document.getElementById('epg-select');
+      const newEpgEntry = select.value;
+      if (!currentChannelId) {
+        alert("Channel id not set");
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append("channel_id", currentChannelId);
+      formData.append("new_epg_entry", newEpgEntry);
+
+      fetch("/update_epg_entry", {
+        method: "POST",
+        body: formData
+      })
+      .then(response => response.json())
+      .then(result => {
+        if (result.success) {
+          alert("EPG entry updated successfully.");
+          // Optionally, update the row's data attribute (and/or refresh the page)
+          const row = document.querySelector(`tr[data-channel="${currentChannelId}"]`);
+          if (row) {
+            row.setAttribute('data-epg-entry', newEpgEntry);
+          }
+          closeModal();
+        } else {
+          alert("Failed to update EPG entry: " + result.error);
+        }
+      })
+      .catch(error => {
+        alert("Error updating EPG entry: " + error);
+      });
+    }
+  </script>
+
+  {{ js_script|safe }}
 </body>
 </html>
