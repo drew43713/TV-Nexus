@@ -29,7 +29,7 @@ services:
       context: https://github.com/drew43713/plex-iptv.git
     ports:
       - "8100:8100"
-	environment:
+    environment:
       - HOST_IP=your.host.ip
     volumes:
       - /appdata/plex-iptv:/app/config  # Adjust the path based on your setup for persistent storage
