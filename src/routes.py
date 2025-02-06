@@ -256,6 +256,10 @@ def get_epg_entries():
 
 @router.post("/update_epg_entry")
 def update_epg_entry(channel_id: int = Form(...), new_epg_entry: str = Form(...)):
+    """
+    Update the channel's tvg_name in the database and rebuild only the programme data
+    in the modified EPG file for that channel.
+    """
     try:
         # Update the channel's tvg_name in the database.
         conn = sqlite3.connect(DB_FILE)
@@ -266,7 +270,6 @@ def update_epg_entry(channel_id: int = Form(...), new_epg_entry: str = Form(...)
             conn.close()
             return JSONResponse({"success": False, "error": "Channel not found."})
         current_tvg_name = row[0]
-
         c.execute("UPDATE channels SET tvg_name = ? WHERE id = ?", (new_epg_entry, channel_id))
         conn.commit()
         conn.close()
@@ -278,3 +281,36 @@ def update_epg_entry(channel_id: int = Form(...), new_epg_entry: str = Form(...)
         return JSONResponse({"success": True})
     except Exception as e:
         return JSONResponse({"success": False, "error": str(e)})
+
+@router.get("/api/current_program")
+def get_current_program(channel_id: int):
+    """
+    Returns the current programme for a given channel based on the modified EPG data.
+    Uses the current UTC time to query the epg_programs table.
+    """
+    now = datetime.utcnow().strftime("%Y%m%d%H%M%S") + " +0000"
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("""
+        SELECT title, start, stop, description
+        FROM epg_programs
+        WHERE channel_tvg_name = ? AND start <= ? AND stop > ?
+        ORDER BY start DESC
+        LIMIT 1
+    """, (str(channel_id), now, now))
+    row = c.fetchone()
+    conn.close()
+    if row:
+        return JSONResponse({
+            "title": row[0],
+            "start": row[1],
+            "stop": row[2],
+            "description": row[3]
+        })
+    else:
+        return JSONResponse({
+            "title": "No Program",
+            "start": "",
+            "stop": "",
+            "description": ""
+        })
