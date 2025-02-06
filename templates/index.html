@@ -35,7 +35,9 @@
       border: 1px solid #ccc;
       padding: 5px;
     }
-    button.edit-button, button.epg-save-button, button.probe-button {
+    button.edit-button,
+    button.epg-save-button,
+    button.probe-button {
       padding: 5px 10px;
       cursor: pointer;
     }
@@ -99,6 +101,14 @@
       font-family: monospace;
       font-size: 14px;
     }
+    /* Combined EPG search input with datalist */
+    #epg-input {
+      width: 90%;
+      padding: 5px;
+      margin: 5px auto;
+      display: block;
+      border: 1px solid #ccc;
+    }
   </style>
 </head>
 <body>
@@ -150,14 +160,16 @@
       <p><strong>Current Program:</strong> <span id="modal-epg"></span></p>
       <p><strong>Stream URL:</strong> <a id="modal-stream-url" href="#" target="_blank">Click to Stream</a></p>
       
-      <!-- New EPG selection dropdown -->
+      <!-- Combined EPG search and selection -->
       <p>
-        <label for="epg-select"><strong>Select EPG Entry:</strong></label>
-        <select id="epg-select"></select>
+        <label for="epg-input"><strong>Select EPG Entry:</strong></label>
+        <input type="text" id="epg-input" placeholder="Type to search..." list="epg-list">
+        <datalist id="epg-list"></datalist>
       </p>
+      
       <!-- Save EPG Button -->
       <button class="epg-save-button" onclick="saveEpgEntry()">Save EPG</button>
-      <!-- New Probe Stream Button -->
+      <!-- Probe Stream Button -->
       <button class="probe-button" onclick="probeStream()">Probe Stream</button>
       <!-- Area to display probe results -->
       <div id="probe-results"></div>
@@ -170,8 +182,9 @@
   <div id="loading">Please wait while the EPG updates...</div>
 
   <script>
-    // Global variable to keep track of the channel being edited.
+    // Global variable for channel id and for storing all EPG entries.
     let currentChannelId = null;
+    let allEpgEntries = [];
 
     function handleEnter(event, input) {
       if (event.key === "Enter") {
@@ -231,6 +244,8 @@
 
       // Clear any previous probe results.
       document.getElementById('probe-results').innerText = "";
+      // Clear the combined input field.
+      document.getElementById('epg-input').value = "";
 
       // Load available EPG entries from the API endpoint.
       loadAvailableEpgEntries(epgEntry);
@@ -244,24 +259,23 @@
       document.getElementById('overlay').style.display = 'none';
     }
 
-    // Load available EPG entries into the dropdown.
+    // Load available EPG entries and populate the datalist.
     function loadAvailableEpgEntries(defaultEntry) {
       fetch('/api/epg_entries')
         .then(response => response.json())
         .then(data => {
-          const select = document.getElementById('epg-select');
-          select.innerHTML = ''; // Clear previous options
-
-          data.forEach(epgEntry => {
+          allEpgEntries = data; // Save the full list globally.
+          const datalist = document.getElementById('epg-list');
+          datalist.innerHTML = "";
+          allEpgEntries.forEach(epgEntry => {
             const option = document.createElement('option');
             option.value = epgEntry;
-            option.text = epgEntry;
-            // Pre-select the option that matches the current EPG entry.
-            if (epgEntry === defaultEntry) {
-              option.selected = true;
-            }
-            select.appendChild(option);
+            datalist.appendChild(option);
           });
+          // If a default entry is provided, set the input's value.
+          if (defaultEntry) {
+            document.getElementById('epg-input').value = defaultEntry;
+          }
         })
         .catch(error => {
           console.error("Error loading EPG entries:", error);
@@ -278,10 +292,9 @@
       document.getElementById('loading').style.display = 'none';
     }
 
-    // When the user clicks "Save EPG" in the modal, update the server and then update the table.
+    // When "Save EPG" is clicked, update the server and then update the table.
     function saveEpgEntry() {
-      const select = document.getElementById('epg-select');
-      const newEpgEntry = select.value;
+      const newEpgEntry = document.getElementById('epg-input').value;
       if (!currentChannelId) {
         alert("Channel id not set");
         return;
@@ -304,7 +317,6 @@
           fetch(`/api/current_program?channel_id=${currentChannelId}`)
             .then(resp => resp.json())
             .then(data => {
-              // Update the table row immediately.
               const row = document.querySelector(`tr[data-channel="${currentChannelId}"]`);
               if (row) {
                 row.setAttribute('data-epg-entry', newEpgEntry);
@@ -345,7 +357,6 @@
       fetch(`/probe_stream?channel_id=${currentChannelId}`)
         .then(response => response.json())
         .then(data => {
-          // Format the probe data for display.
           probeDiv.innerText = JSON.stringify(data, null, 2);
         })
         .catch(error => {
