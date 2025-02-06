@@ -83,6 +83,9 @@
   </div>
 
   <script>
+    // Global variable to keep track of the channel being edited.
+    let currentChannelId = null;
+
     function handleEnter(event, input) {
       if (event.key === "Enter") {
         input.blur();
@@ -119,9 +122,6 @@
       });
     }
 
-    // Global variable to keep track of the channel being edited.
-    let currentChannelId = null;
-
     function handleEditButtonClick(event, button) {
       event.stopPropagation();
       const row = button.closest('tr');
@@ -133,7 +133,7 @@
       const epgEntry = row.getAttribute('data-epg-entry');  
       const streamUrl = row.getAttribute('data-stream-url');  
 
-      currentChannelId = channelId; // save channel id for later use
+      currentChannelId = channelId; // Save channel id for later use
 
       document.getElementById('modal-title').innerText = channelName;
       document.getElementById('modal-logo').src = logo;
@@ -142,7 +142,7 @@
       document.getElementById('modal-stream-url').innerText = streamUrl;
       document.getElementById('modal-stream-url').href = streamUrl;
 
-      // Load available EPG entries from our API endpoint
+      // Load available EPG entries from the API endpoint.
       loadAvailableEpgEntries(epgEntry);
 
       document.getElementById('modal').style.display = 'block';
@@ -154,8 +154,7 @@
       document.getElementById('overlay').style.display = 'none';
     }
 
-    // Function to load available EPG entries into the dropdown.
-    // defaultEntry should be the current channel's epg entry (e.g. its tvg_name)
+    // Load available EPG entries into the dropdown.
     function loadAvailableEpgEntries(defaultEntry) {
       fetch('/api/epg_entries')
         .then(response => response.json())
@@ -167,7 +166,7 @@
             const option = document.createElement('option');
             option.value = epgEntry;
             option.text = epgEntry;
-            // Select the option that matches the channel's current epg entry.
+            // Pre-select the option that matches the current EPG entry.
             if (epgEntry === defaultEntry) {
               option.selected = true;
             }
@@ -179,7 +178,7 @@
         });
     }
 
-    // Called when the user clicks the "Save EPG" button in the modal.
+    // When the user clicks "Save EPG" in the modal, update the server and then update the row.
     function saveEpgEntry() {
       const select = document.getElementById('epg-select');
       const newEpgEntry = select.value;
@@ -199,12 +198,19 @@
       .then(response => response.json())
       .then(result => {
         if (result.success) {
-          alert("EPG entry updated successfully.");
-          // Optionally, update the row's data attribute (and/or refresh the page)
+          // Update the table row immediately.
           const row = document.querySelector(`tr[data-channel="${currentChannelId}"]`);
           if (row) {
+            // Update the data attribute for the EPG entry.
             row.setAttribute('data-epg-entry', newEpgEntry);
+            // Update the "Current Program" cell.
+            const cells = row.getElementsByTagName("td");
+            // Assuming the 4th cell (index 3) contains the current program title.
+            if (cells.length >= 4) {
+              cells[3].innerText = newEpgEntry;
+            }
           }
+          alert("EPG entry updated successfully.");
           closeModal();
         } else {
           alert("Failed to update EPG entry: " + result.error);
