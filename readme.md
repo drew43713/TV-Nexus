@@ -31,6 +31,7 @@ services:
       - "8100:8100"
     environment:
       - HOST_IP=your.host.ip
+	  - PORT=8100 #default port
     volumes:
       - /appdata/plex-iptv:/app/config  # Adjust the path based on your setup for persistent storage
 ```

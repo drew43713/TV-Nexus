@@ -57,8 +57,7 @@ def get_local_ip():
 def lineup(request: Request):
     # Get the server's IP address using our helper function.
     server_ip = get_local_ip()
-    
-    # Build the base URL using the server's IP address.
+    # Build the base URL using the request's scheme and port.
     base_url = f"{request.url.scheme}://{server_ip}:{request.url.port}"
     
     conn = sqlite3.connect(DB_FILE)
@@ -69,12 +68,17 @@ def lineup(request: Request):
     
     lineup_data = []
     for ch_id, ch_name, ch_url, logo_url in rows:
+        # If the logo URL is relative, build the full URL.
+        if logo_url and logo_url.startswith("/"):
+            full_logo_url = f"{base_url}{logo_url}"
+        else:
+            full_logo_url = logo_url
         guide_number = str(ch_id)
         channel_obj = {
             "GuideNumber": guide_number,
             "GuideName": ch_name,
             "Station": guide_number,
-            "Logo": logo_url if logo_url else "",
+            "Logo": full_logo_url if full_logo_url else "",
             "URL": f"{base_url}/tuner/{ch_id}"
         }
         lineup_data.append(channel_obj)

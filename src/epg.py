@@ -107,7 +107,24 @@ def parse_epg_files():
                     if new_id_str in channel_info:
                         ch_name, ch_logo = channel_info[new_id_str]
                         if ch_logo:
-                            icon_el = ET.Element("icon", src=ch_logo)
+                            # If the logo URL is relative (starts with "/"), convert it to a full URL.
+                            if ch_logo.startswith("/"):
+                                # Try to get BASE_URL from the environment.
+                                base_url = os.environ.get("BASE_URL", "").strip()
+                                if base_url:
+                                    base_url = base_url.rstrip("/")
+                                else:
+                                    # Fallback: import get_local_ip from routes to build the base URL.
+                                    from .routes import get_local_ip
+                                    server_ip = get_local_ip()
+                                    # Look for a lowercase 'port' env variable, then fallback to 'PORT'
+                                    port = os.environ.get("port", os.environ.get("PORT", "8100"))
+                                    base_url = f"http://{server_ip}:{port}"
+                                    print(f"[DEBUG] Fallback base_url: {base_url}")
+                                full_logo_url = f"{base_url}{ch_logo}"
+                            else:
+                                full_logo_url = ch_logo
+                            icon_el = ET.Element("icon", src=full_logo_url)
                             new_channel_el.append(icon_el)
                         if ch_name:
                             disp_el = ET.Element("display-name")
