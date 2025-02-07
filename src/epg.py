@@ -6,6 +6,13 @@ import xml.etree.ElementTree as ET
 from .config import EPG_DIR, MODIFIED_EPG_DIR, DB_FILE
 
 
+import os
+import sqlite3
+import html
+import gzip
+import xml.etree.ElementTree as ET
+from .config import EPG_DIR, MODIFIED_EPG_DIR, DB_FILE, HOST_IP, PORT
+
 def parse_epg_files():
     print("Parsing EPG files...")
     """
@@ -114,13 +121,9 @@ def parse_epg_files():
                                 if base_url:
                                     base_url = base_url.rstrip("/")
                                 else:
-                                    # Fallback: import get_local_ip from routes to build the base URL.
-                                    from .routes import get_local_ip
-                                    server_ip = get_local_ip()
-                                    # Look for a lowercase 'port' env variable, then fallback to 'PORT'
-                                    port = os.environ.get("port", os.environ.get("PORT", "8100"))
-                                    base_url = f"http://{server_ip}:{port}"
-                                    print(f"[DEBUG] Fallback base_url: {base_url}")
+                                    # Fallback to config values.
+                                    base_url = f"http://{HOST_IP}:{PORT}"
+                                    print(f"[DEBUG] Fallback base_url from config: {base_url}")
                                 full_logo_url = f"{base_url}{ch_logo}"
                             else:
                                 full_logo_url = ch_logo

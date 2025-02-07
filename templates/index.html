@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>IPTV Channel List</title>
+  <title>{{ BASE_URL }} - IPTV Channel List</title>
   <style>
     body {
       font-family: Arial, sans-serif;
@@ -110,6 +110,10 @@
       border: 1px solid #ccc;
     }
   </style>
+  <script>
+    // Global configuration variable from the config file
+    const BASE_URL = "{{ BASE_URL }}";
+  </script>
 </head>
 <body>
   <h1>IPTV Channel List</h1>
@@ -143,7 +147,6 @@
         <td>{{ channel[1] }}</td>
         <td>{{ epg_map[channel[0]|string]['title'] if channel[0]|string in epg_map else 'No Program' }}</td>
         <td>
-          <!-- Dedicated Edit Button to open the modal -->
           <button class="edit-button" onclick="handleEditButtonClick(event, this)">Edit</button>
         </td>
       </tr>

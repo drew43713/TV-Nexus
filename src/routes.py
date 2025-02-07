@@ -1,6 +1,5 @@
 import os
 import gzip
-import socket
 import sqlite3
 import subprocess
 import json
@@ -10,19 +9,24 @@ from fastapi.responses import (
     HTMLResponse, RedirectResponse
 )
 from fastapi.templating import Jinja2Templates
-from .config import DB_FILE, MODIFIED_EPG_DIR, EPG_DIR
+from .config import DB_FILE, MODIFIED_EPG_DIR, EPG_DIR, HOST_IP, PORT
 from .database import swap_channel_ids
 from .epg import update_modified_epg
 from .streaming import get_shared_stream, clear_shared_stream
 from .m3u import load_m3u_files
 import xml.etree.ElementTree as ET
+from datetime import datetime
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
 
+# Define a base URL using the config file values.
+BASE_URL = f"http://{HOST_IP}:{PORT}"
+
 @router.get("/discover.json")
 def discover(request: Request):
-    base_url = f"{request.url.scheme}://{request.client.host}:{request.url.port}"
+    # Use BASE_URL from config.
+    base_url = BASE_URL
     return JSONResponse({
         "FriendlyName": "IPTV HDHomeRun",
         "Manufacturer": "Custom",
@@ -35,30 +39,10 @@ def discover(request: Request):
         "LineupURL": f"{base_url}/lineup.json"
     })
 
-def get_local_ip():
-    # If running in Docker, you can supply the host IP via an environment variable.
-    host_ip = os.getenv("HOST_IP")
-    if host_ip:
-        return host_ip
-
-    # Otherwise, try the usual method.
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    try:
-        # This doesn't actually establish a connection.
-        s.connect(("8.8.8.8", 80))
-        ip = s.getsockname()[0]
-    except Exception:
-        ip = "127.0.0.1"
-    finally:
-        s.close()
-    return ip
-
 @router.get("/lineup.json")
 def lineup(request: Request):
-    # Get the server's IP address using our helper function.
-    server_ip = get_local_ip()
-    # Build the base URL using the request's scheme and port.
-    base_url = f"{request.url.scheme}://{server_ip}:{request.url.port}"
+    # Use BASE_URL from config.
+    base_url = BASE_URL
     
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
@@ -137,25 +121,21 @@ def tuner_stream(channel_id: int, request: Request):
 
     return StreamingResponse(streamer(), media_type="video/mp2t")
 
-from datetime import datetime
-
 @router.get("/web", response_class=HTMLResponse)
 def web_interface(request: Request):
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     c.execute("SELECT id, name, url, tvg_name, logo_url, group_title FROM channels ORDER BY id")
     channels = c.fetchall()
-    server_ip = get_local_ip()
 
     epg_map = {}
     epg_entry_map = {}  # Store which EPG entry is assigned to each channel
     stream_map = {}  # Store the stream URL for each channel
 
-    # Get base URL dynamically
-    base_url = f"{request.url.scheme}://{server_ip}:{request.url.port}"
+    # Use BASE_URL from config.
+    base_url = BASE_URL
     
     # Format the current UTC time as in the database.  
-    # For example, if the DB value is like "20250210220000 +0000" (YYYYMMDDHHMMSS +0000):
     now = datetime.utcnow().strftime("%Y%m%d%H%M%S") + " +0000"
 
     for ch_id, ch_name, ch_url, ch_tvg_name, ch_logo, ch_group in channels:
@@ -182,7 +162,7 @@ def web_interface(request: Request):
         # Store the EPG entry name
         epg_entry_map[str(ch_id)] = ch_tvg_name  
 
-        # Generate the stream URL from FastAPI's /tuner/{channel_id}
+        # Generate the stream URL using BASE_URL.
         stream_map[str(ch_id)] = f"{base_url}/tuner/{ch_id}"
 
     conn.close()
@@ -220,7 +200,7 @@ def web_interface(request: Request):
         "channels": channels,
         "epg_map": epg_map,
         "epg_entry_map": epg_entry_map,  
-        "stream_map": stream_map,  # Pass stream URL mapping
+        "stream_map": stream_map,
         "js_script": js_script
     })
 
