@@ -123,7 +123,7 @@ def parse_epg_files():
                                 else:
                                     # Fallback to config values.
                                     base_url = f"http://{HOST_IP}:{PORT}"
-                                    print(f"[DEBUG] Fallback base_url from config: {base_url}")
+                                    #print(f"[DEBUG] Fallback base_url from config: {base_url}")
                                 full_logo_url = f"{base_url}{ch_logo}"
                             else:
                                 full_logo_url = ch_logo

@@ -6,34 +6,52 @@ import requests
 from .config import M3U_DIR, DB_FILE, LOGOS_DIR
 from .epg import parse_epg_files
 
+import os
+import hashlib
+import requests
+from .config import LOGOS_DIR
+
 def cache_logo(logo_url: str) -> str:
     """
-    Download the image at logo_url (if not already cached) and return a local URL
-    (e.g. /static/logos/<filename>). If the download fails, return the original URL.
+    Download the image at logo_url (if not already cached or if the cached file is invalid)
+    and return a local URL (e.g. /static/logos/<filename>). If the download fails, return the original URL.
     """
     if not logo_url:
         return logo_url  # nothing to cache
 
     try:
+        # Get the absolute path for the logos directory.
+        logos_dir = os.path.abspath(LOGOS_DIR)
+        # Ensure the logos directory exists.
+        os.makedirs(logos_dir, exist_ok=True)
+
         # Create a unique filename based on the URL.
         h = hashlib.md5(logo_url.encode("utf-8")).hexdigest()
-        # Try to use the extension from the URL, default to .jpg if not found.
+        # Try to use the extension from the URL; default to .jpg if not found.
         ext = os.path.splitext(logo_url)[1]
         if not ext or len(ext) > 5:
             ext = ".jpg"
         filename = f"{h}{ext}"
-        filepath = os.path.join(LOGOS_DIR, filename)
-        # If the file does not exist, download and save it.
-        if not os.path.exists(filepath):
-            response = requests.get(logo_url, timeout=10)
-            if response.status_code == 200:
-                with open(filepath, "wb") as f:
-                    f.write(response.content)
+        filepath = os.path.join(logos_dir, filename)
+
+        # Check if the file exists and has a non-zero size.
+        if os.path.exists(filepath):
+            if os.path.getsize(filepath) > 0:
+                return f"/static/logos/{filename}"
             else:
-                print(f"Warning: Failed to download logo {logo_url} (status: {response.status_code}).")
-                return logo_url
+                # File exists but is empty or invalid; remove it to recache.
+                os.remove(filepath)
+
+        # File doesn't exist or was invalid; download and save it.
+        response = requests.get(logo_url, timeout=10)
+        if response.status_code == 200:
+            with open(filepath, "wb") as f:
+                f.write(response.content)
+        else:
+            print(f"Warning: Failed to download logo {logo_url} (status: {response.status_code}).")
+            return logo_url
+
         # Return the local URL to be used by the app.
-        # Adjust the URL path as needed; here we assume your static files are served from /static/.
         return f"/static/logos/{filename}"
     except Exception as e:
         print(f"Error caching logo {logo_url}: {e}")
@@ -52,6 +70,7 @@ def parse_m3u_attribute(line: str, attr_name: str) -> str:
     return html.unescape(line[start:end])
 
 def find_m3u_files():
+    os.makedirs(M3U_DIR, exist_ok=True)
     return [
         os.path.join(M3U_DIR, f)
         for f in os.listdir(M3U_DIR)
@@ -97,12 +116,23 @@ def load_m3u_files():
                 row = c.fetchone()
                 if row:
                     channel_id, old_url, old_logo = row
-                    # If we already have a logo cached (i.e. old_logo starts with /static/logos/),
-                    # then keep that value. Otherwise, cache the current remote logo.
+                    tvg_logo_local = ""
+                    # If we have a cached logo reference, verify that the file exists.
                     if old_logo and old_logo.startswith("/static/logos/"):
-                        tvg_logo_local = old_logo
+                        # Extract the filename from the stored path.
+                        filename = old_logo.split("/static/logos/")[-1]
+                        logos_dir = os.path.abspath(LOGOS_DIR)
+                        filepath = os.path.join(logos_dir, filename)
+                        if os.path.exists(filepath) and os.path.getsize(filepath) > 0:
+                            # The cached file exists and is valid.
+                            tvg_logo_local = old_logo
+                        else:
+                            # The file is missing or invalid, so recache the logo.
+                            tvg_logo_local = cache_logo(remote_logo)
                     else:
+                        # No cached logo, so attempt to cache it now.
                         tvg_logo_local = cache_logo(remote_logo)
+                    
                     # Update the record if the stream URL or logo URL has changed.
                     if old_url != url or (old_logo != tvg_logo_local):
                         c.execute("""
