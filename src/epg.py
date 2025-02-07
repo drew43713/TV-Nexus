@@ -7,6 +7,7 @@ from .config import EPG_DIR, MODIFIED_EPG_DIR, DB_FILE
 
 
 def parse_epg_files():
+    print("Parsing EPG files...")
     """
     Parse all raw EPG files from EPG_DIR (files ending in .xml, .xmltv, or .gz)
     and merge them into a combined file (EPG.xml) in MODIFIED_EPG_DIR.

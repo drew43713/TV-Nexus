@@ -178,7 +178,7 @@ def web_interface(request: Request):
         # Store the EPG entry name
         epg_entry_map[str(ch_id)] = ch_tvg_name  
 
-        # Generate the stream URL from FastAPI's `/tuner/{channel_id}`
+        # Generate the stream URL from FastAPI's /tuner/{channel_id}
         stream_map[str(ch_id)] = f"{base_url}/tuner/{ch_id}"
 
     conn.close()
