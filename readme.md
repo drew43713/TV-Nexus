@@ -49,7 +49,7 @@ Make sure you have the following installed:
 
 > **Note:**  
 > - Update the `volumes` path (`/appdata/plex-iptv:/app/config`) to suit your setup. This path stores the SQLite database and configuration files.  
-> - You **must** provide your host IP address via the `HOST_IP` environment variable; otherwise, the app may choose the Docker IP instead of your LAN IP.
+> - You **must** provide your host IP address via the `HOST_IP` environment variable or configuration file; otherwise, the app may choose the Docker IP instead of your LAN IP.
 
 ---
 
