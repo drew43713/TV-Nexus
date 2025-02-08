@@ -12,7 +12,8 @@ DEFAULT_CONFIG = {
     "EPG_DIR": os.path.join("config", "epg"),
     "MODIFIED_EPG_DIR": os.path.join("config", "epg_modified"),
     "DB_FILE": os.path.join("config", "iptv_channels.db"),
-    "LOGOS_DIR": os.path.join("static", "logos")
+    "LOGOS_DIR": os.path.join("static", "logos"),
+    "CUSTOM_LOGOS_DIR": os.path.join("static", "custom_logos")
 }
 
 # Ensure the config directory exists.
@@ -51,6 +52,10 @@ try:
 except Exception as e:
     print(f"Error writing config file: {e}")
 
+# Ensure that necessary directories exist.
+os.makedirs(config["LOGOS_DIR"], exist_ok=True)
+os.makedirs(config["CUSTOM_LOGOS_DIR"], exist_ok=True)
+
 # Expose configuration values as module-level constants.
 HOST_IP = config["HOST_IP"]
 PORT = config["PORT"]
@@ -59,3 +64,4 @@ EPG_DIR = config["EPG_DIR"]
 MODIFIED_EPG_DIR = config["MODIFIED_EPG_DIR"]
 DB_FILE = config["DB_FILE"]
 LOGOS_DIR = config["LOGOS_DIR"]
+CUSTOM_LOGOS_DIR = config["CUSTOM_LOGOS_DIR"]

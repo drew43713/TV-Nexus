@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>{{ BASE_URL }} - IPTV Channel List</title>
   <style>
+    /* Global styles */
     body {
       font-family: Arial, sans-serif;
       background-color: #f4f4f9;
@@ -28,6 +29,7 @@
     img.channel-logo {
       max-height: 40px;
       width: auto;
+      cursor: pointer;
     }
     input.channel-number {
       width: 50px;
@@ -37,11 +39,13 @@
     }
     button.edit-button,
     button.epg-save-button,
-    button.probe-button {
+    button.probe-button,
+    button.save-name-button {
       padding: 5px 10px;
       cursor: pointer;
     }
-    .modal {
+    /* Modal and overlay styles */
+    .modal, .logo-picker-modal {
       display: none;
       position: fixed;
       top: 50%;
@@ -51,20 +55,35 @@
       padding: 20px;
       box-shadow: 0 0 10px rgba(0,0,0,0.5);
       z-index: 1000;
+      max-width: 90%;
     }
-    .modal-content {
+    .modal-content, .logo-picker-content {
       text-align: center;
     }
-    .modal img {
-      max-width: 100px;
+    .modal img, .logo-picker-modal img {
       display: block;
       margin: auto;
     }
-    .modal button {
+    /* The modal header (channel name) is inline-editable */
+    .modal h2 {
+      cursor: pointer;
+      margin: 0 0 10px 0;
+    }
+    /* Category text styling */
+    .modal p#modal-category-text {
+      cursor: pointer;
+      font-size: 16px;
+      margin: 5px 0;
+    }
+    .modal img#modal-logo {
+      max-width: 150px;
+      cursor: pointer;
+    }
+    .modal button, .logo-picker-modal button {
       margin-top: 10px;
       padding: 5px 10px;
     }
-    .overlay {
+    .overlay, .logo-picker-overlay {
       display: none;
       position: fixed;
       top: 0;
@@ -72,7 +91,7 @@
       width: 100%;
       height: 100%;
       background: rgba(0, 0, 0, 0.5);
-      z-index: 999;
+      z-index: 900;
     }
     /* Loading overlay style */
     #loading {
@@ -101,7 +120,7 @@
       font-family: monospace;
       font-size: 14px;
     }
-    /* Combined EPG search input with datalist */
+    /* EPG input styling */
     #epg-input {
       width: 90%;
       padding: 5px;
@@ -109,21 +128,37 @@
       display: block;
       border: 1px solid #ccc;
     }
+    /* Logo picker styles */
+    .logo-picker-modal {
+      max-width: 500px;
+      max-height: 80%;
+      overflow-y: auto;
+    }
+    .logo-picker-modal img {
+      margin: 5px;
+      height: 50px;
+      cursor: pointer;
+      border: 2px solid transparent;
+    }
+    .logo-picker-modal img.selected {
+      border-color: blue;
+    }
   </style>
   <script>
-    // Global configuration variable from the config file
+    // Global configuration variable from your backend.
     const BASE_URL = "{{ BASE_URL }}";
   </script>
 </head>
 <body>
   <h1>IPTV Channel List</h1>
-  <!-- Note: The table has an ID ("channels-table") so we can reference it later -->
+  <!-- Channel List Table -->
   <table id="channels-table">
     <thead>
       <tr>
         <th>Channel #</th>
         <th>Logo</th>
         <th>Channel Name</th>
+        <th>Category</th>
         <th>EPG (Current Program)</th>
         <th>Edit</th>
       </tr>
@@ -133,10 +168,10 @@
       <tr data-channel="{{ channel[0] }}" 
           data-name="{{ channel[1] }}" 
           data-logo="{{ channel[4] }}" 
+          data-category="{{ channel[5] }}" 
           data-epg="{{ epg_map[channel[0]|string]['title'] if channel[0]|string in epg_map else 'No Program' }}"
           data-epg-entry="{{ epg_entry_map[channel[0]|string] if channel[0]|string in epg_entry_map else 'Unknown' }}"
           data-stream-url="{{ stream_map[channel[0]|string] if channel[0]|string in stream_map else 'N/A' }}">
-        <!-- Editable Channel Number -->
         <td>
           <input type="number" class="channel-number" 
                  value="{{ channel[0] }}" 
@@ -144,8 +179,11 @@
                  onblur="updateChannelNumber(this)"
                  onkeydown="handleEnter(event, this)">
         </td>
-        <td><img src="{{ channel[4] }}" class="channel-logo" /></td>
+        <td>
+          <img src="{{ channel[4] }}" class="channel-logo" />
+        </td>
         <td>{{ channel[1] }}</td>
+        <td>{{ channel[5] }}</td>
         <td>{{ epg_map[channel[0]|string]['title'] if channel[0]|string in epg_map else 'No Program' }}</td>
         <td>
           <button class="edit-button" onclick="handleEditButtonClick(event, this)">Edit</button>
@@ -155,135 +193,338 @@
     </tbody>
   </table>
   
-  <!-- Modal and overlay -->
+  <!-- Main Modal and overlay for editing channel details -->
   <div class="overlay" id="overlay" onclick="closeModal()"></div>
   <div class="modal" id="modal">
     <div class="modal-content">
-      <h2 id="modal-title"></h2>
-      <img id="modal-logo" src="" alt="Channel Logo" />
-      <p><strong>Channel Number:</strong> <span id="modal-channel"></span></p>
-      <p><strong>Current Program:</strong> <span id="modal-epg"></span></p>
-      <p><strong>Stream URL:</strong> <a id="modal-stream-url" href="#" target="_blank">Click to Stream</a></p>
+      <!-- Inline-editable channel name header -->
+      <h2 id="modal-title" onclick="editChannelName()"></h2>
+      <!-- Inline-editable category field with datalist support -->
+      <p id="modal-category-text" onclick="editChannelCategory()"></p>
+      <!-- Channel logo; clicking opens the logo picker -->
+      <img id="modal-logo" src="" alt="Channel Logo" onclick="openLogoPicker()" />
+      <p>
+        <strong>Channel Number:</strong> <span id="modal-channel"></span>
+      </p>
+      <p>
+        <strong>Current Program:</strong> <span id="modal-epg"></span>
+      </p>
+      <p>
+        <strong>Stream URL:</strong> 
+        <a id="modal-stream-url" href="#" target="_blank">Click to Stream</a>
+      </p>
       
-      <!-- Combined EPG search and selection -->
+      <!-- EPG Selection Section -->
       <p>
         <label for="epg-input"><strong>Select EPG Entry:</strong></label>
         <input type="text" id="epg-input" placeholder="Type to search..." list="epg-list">
         <datalist id="epg-list"></datalist>
       </p>
       
-      <!-- Save EPG Button -->
       <button class="epg-save-button" onclick="saveEpgEntry()">Save EPG</button>
-      <!-- Probe Stream Button -->
       <button class="probe-button" onclick="probeStream()">Probe Stream</button>
-      <!-- Area to display probe results -->
       <div id="probe-results"></div>
       
       <button onclick="closeModal()">Close</button>
     </div>
   </div>
-
+  
+  <!-- Logo Picker Overlay and Modal (for selecting a logo) -->
+  <div class="logo-picker-overlay" id="logo-picker-overlay" style="display:none; position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.5); z-index:1100;" onclick="closeLogoPicker()"></div>
+  <div class="logo-picker-modal" id="logo-picker-modal" style="display:none; position: fixed; top:50%; left:50%; transform: translate(-50%, -50%); background: #fff; padding: 20px; z-index:1200;">
+    <div class="logo-picker-content">
+      <h3>Select a Logo</h3>
+      <div id="logo-picker-container" style="display: flex; flex-wrap: wrap; justify-content: center;"></div>
+      <button onclick="closeLogoPicker()">Cancel</button>
+    </div>
+  </div>
+  
+  <!-- Datalist for available categories -->
+  <datalist id="category-list"></datalist>
+  
   <!-- Loading overlay -->
   <div id="loading">Please wait while the EPG updates...</div>
-
-  <!-- Table Sorting Script -->
-  <script>
-    document.addEventListener("DOMContentLoaded", function() {
-      const table = document.getElementById("channels-table");
-      if (!table) return;
-      
-      // Get all header cells from the table.
-      const headers = table.querySelectorAll("thead th");
-      
-      headers.forEach((header, index) => {
-        header.style.cursor = "pointer"; // indicate clickability
-        header.addEventListener("click", () => {
-          sortTableByColumn(table, index);
-        });
-      });
-      
-      /**
-       * Returns the text content of a cell. If the cell contains an input element,
-       * the function returns the value of that input.
-       * @param {HTMLTableCellElement} cell - The cell element.
-       */
-      function getCellValue(cell) {
-        const input = cell.querySelector('input');
-        if (input) {
-          return input.value.trim();
-        } else {
-          return cell.innerText.trim();
-        }
-      }
-      
-      /**
-       * Sorts the rows of a table's tbody based on the content of a given column.
-       * @param {HTMLTableElement} table - The table element.
-       * @param {number} columnIndex - The index of the column to sort by.
-       */
-      function sortTableByColumn(table, columnIndex) {
-        const tbody = table.querySelector("tbody");
-        const rows = Array.from(tbody.querySelectorAll("tr"));
-        
-        // Toggle the sorting order for the clicked header.
-        const header = table.querySelectorAll("thead th")[columnIndex];
-        let ascending = header.getAttribute("data-sort-asc") === "true";
-        ascending = !ascending;
-        header.setAttribute("data-sort-asc", ascending);
-        
-        // Remove sort indicators from other headers.
-        table.querySelectorAll("thead th").forEach((th, idx) => {
-          if (idx !== columnIndex) {
-            th.removeAttribute("data-sort-asc");
-          }
-        });
-        
-        // Sort rows based on the cell value.
-        rows.sort((a, b) => {
-          let cellA = getCellValue(a.cells[columnIndex]);
-          let cellB = getCellValue(b.cells[columnIndex]);
-          
-          // Attempt numeric conversion if possible.
-          const numA = parseFloat(cellA.replace(/[^0-9.-]+/g, ""));
-          const numB = parseFloat(cellB.replace(/[^0-9.-]+/g, ""));
-          if (!isNaN(numA) && !isNaN(numB)) {
-            return ascending ? numA - numB : numB - numA;
-          }
-          
-          // Fallback to string comparison.
-          return ascending ? cellA.localeCompare(cellB) : cellB.localeCompare(cellA);
-        });
-        
-        // Re-append the sorted rows.
-        rows.forEach(row => tbody.appendChild(row));
-      }
-    });
-  </script>
-
-  <!-- Existing JavaScript functionality -->
+  
+  <!-- JavaScript Functions -->
   <script>
     let currentChannelId = null;
-    let allEpgEntries = [];
+    let selectedLogo = ""; // holds the currently selected logo URL
 
-    function handleEnter(event, input) {
-      if (event.key === "Enter") {
-        input.blur();
-      }
+    // Called when the "Edit" button is clicked.
+    function handleEditButtonClick(event, button) {
+      event.stopPropagation();
+      const row = button.closest('tr');
+      const channelId = row.getAttribute('data-channel');
+      const channelName = row.getAttribute('data-name');
+      const currentLogoUrl = row.getAttribute('data-logo');
+      const channelCategory = row.getAttribute('data-category');
+      const epgTitle = row.getAttribute('data-epg');
+      const epgEntry = row.getAttribute('data-epg-entry');
+      const streamUrl = row.getAttribute('data-stream-url');
+      
+      currentChannelId = channelId;
+      selectedLogo = currentLogoUrl; // default to current logo
+      
+      // Set inline-editable channel name.
+      const modalTitle = document.getElementById('modal-title');
+      modalTitle.innerText = channelName;
+      modalTitle.onclick = editChannelName;
+      
+      // Set inline-editable category text.
+      const modalCategory = document.getElementById('modal-category-text');
+      modalCategory.innerText = "Category: " + channelCategory;
+      modalCategory.onclick = editChannelCategory;
+      
+      document.getElementById('modal-logo').src = currentLogoUrl;
+      document.getElementById('modal-channel').innerText = channelId;
+      document.getElementById('modal-epg').innerText = epgTitle;
+      document.getElementById('modal-stream-url').innerText = streamUrl;
+      document.getElementById('modal-stream-url').href = streamUrl;
+      
+      // Load available EPG entries.
+      loadAvailableEpgEntries(epgEntry);
+      
+      // Clear previous probe results and reset EPG input.
+      document.getElementById('probe-results').innerText = "";
+      document.getElementById('epg-input').value = "";
+      
+      // Show modal and overlay.
+      document.getElementById('modal').style.display = 'block';
+      document.getElementById('overlay').style.display = 'block';
     }
-
+    
+    // Inline editing for channel name.
+    function editChannelName() {
+      const modalTitle = document.getElementById('modal-title');
+      const currentName = modalTitle.innerText;
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.id = 'modal-channel-name-inline';
+      input.value = currentName;
+      input.style.fontSize = 'inherit';
+      input.style.fontFamily = 'inherit';
+      input.style.textAlign = 'center';
+      input.onblur = saveChannelNameInline;
+      input.onkeydown = function(e) {
+        if (e.key === 'Enter') {
+          input.blur();
+        }
+      };
+      modalTitle.parentNode.replaceChild(input, modalTitle);
+      input.focus();
+      input.select();
+    }
+    
+    function saveChannelNameInline() {
+      const input = document.getElementById('modal-channel-name-inline');
+      if (!input) return;
+      const newName = input.value;
+      const h2 = document.createElement('h2');
+      h2.id = 'modal-title';
+      h2.innerText = newName;
+      h2.onclick = editChannelName;
+      input.parentNode.replaceChild(h2, input);
+      
+      if (!currentChannelId) {
+        alert("Channel ID not set.");
+        return;
+      }
+      const formData = new FormData();
+      formData.append("channel_id", currentChannelId);
+      formData.append("new_name", newName);
+      fetch("/update_channel_name", {
+        method: "POST",
+        body: formData
+      })
+      .then(response => response.json())
+      .then(data => {
+        if (data.success) {
+          alert("Channel name updated successfully!");
+          const row = document.querySelector(`tr[data-channel="${currentChannelId}"]`);
+          if (row) {
+            row.setAttribute("data-name", newName);
+            const cells = row.getElementsByTagName("td");
+            if (cells.length >= 3) {
+              cells[2].innerText = newName;
+            }
+          }
+        } else {
+          alert("Failed to update channel name.");
+        }
+      })
+      .catch(error => {
+        alert("Error updating channel name: " + error);
+        console.error("Error updating channel name:", error);
+      });
+    }
+    
+    // Inline editing for channel category with a datalist.
+    function editChannelCategory() {
+      const modalCategory = document.getElementById('modal-category-text');
+      const currentCategory = modalCategory.innerText.replace(/^Category:\s*/, "");
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.id = 'modal-category-inline';
+      input.value = currentCategory;
+      input.setAttribute('list', 'category-list'); // attach the datalist
+      input.style.fontSize = 'inherit';
+      input.style.fontFamily = 'inherit';
+      input.style.textAlign = 'center';
+      input.onblur = saveChannelCategoryInline;
+      input.onkeydown = function(e) {
+        if (e.key === 'Enter') {
+          input.blur();
+        }
+      };
+      modalCategory.parentNode.replaceChild(input, modalCategory);
+      input.focus();
+      input.select();
+      loadAvailableCategories();
+    }
+    
+    function loadAvailableCategories() {
+      fetch('/api/categories')
+      .then(response => response.json())
+      .then(data => {
+        let datalist = document.getElementById('category-list');
+        if (!datalist) {
+          datalist = document.createElement('datalist');
+          datalist.id = 'category-list';
+          document.body.appendChild(datalist);
+        }
+        datalist.innerHTML = "";
+        data.forEach(cat => {
+          const option = document.createElement('option');
+          option.value = cat;
+          datalist.appendChild(option);
+        });
+      })
+      .catch(error => console.error("Error loading categories:", error));
+    }
+    
+    function saveChannelCategoryInline() {
+      const input = document.getElementById('modal-category-inline');
+      if (!input) return;
+      const newCategory = input.value;
+      const p = document.createElement('p');
+      p.id = 'modal-category-text';
+      p.innerText = "Category: " + newCategory;
+      p.onclick = editChannelCategory;
+      input.parentNode.replaceChild(p, input);
+      
+      if (!currentChannelId) {
+        alert("Channel ID not set.");
+        return;
+      }
+      const formData = new FormData();
+      formData.append("channel_id", currentChannelId);
+      formData.append("new_category", newCategory);
+      fetch("/update_channel_category", {
+        method: "POST",
+        body: formData
+      })
+      .then(response => response.json())
+      .then(data => {
+        if (data.success) {
+          alert("Channel category updated successfully!");
+          const row = document.querySelector(`tr[data-channel="${currentChannelId}"]`);
+          if (row) {
+            row.setAttribute("data-category", newCategory);
+            const cells = row.getElementsByTagName("td");
+            if (cells.length >= 4) {
+              cells[3].innerText = newCategory;
+            }
+          }
+        } else {
+          alert("Failed to update channel category.");
+        }
+      })
+      .catch(error => {
+        alert("Error updating channel category: " + error);
+        console.error("Error updating channel category:", error);
+      });
+    }
+    
+    // Open the logo picker.
+    function openLogoPicker() {
+      fetch('/api/logos')
+      .then(response => response.json())
+      .then(data => {
+        const pickerContainer = document.getElementById('logo-picker-container');
+        pickerContainer.innerHTML = "";
+        data.forEach(logoUrl => {
+          const logoImg = document.createElement("img");
+          logoImg.src = logoUrl;
+          if (logoUrl === selectedLogo) {
+            logoImg.classList.add("selected");
+          }
+          logoImg.onclick = function(e) {
+            e.stopPropagation();
+            selectedLogo = logoUrl;
+            document.getElementById('modal-logo').src = logoUrl;
+            Array.from(pickerContainer.children).forEach(child => {
+              child.classList.remove("selected");
+            });
+            logoImg.classList.add("selected");
+            saveChannelLogo();
+            closeLogoPicker();
+          };
+          pickerContainer.appendChild(logoImg);
+        });
+        document.getElementById('logo-picker-overlay').style.display = 'block';
+        document.getElementById('logo-picker-modal').style.display = 'block';
+      })
+      .catch(error => console.error("Error fetching logos:", error));
+    }
+    
+    function closeLogoPicker() {
+      document.getElementById('logo-picker-overlay').style.display = 'none';
+      document.getElementById('logo-picker-modal').style.display = 'none';
+    }
+    
+    function saveChannelLogo() {
+      if (!currentChannelId) {
+        alert("Channel ID not set.");
+        return;
+      }
+      const formData = new FormData();
+      formData.append("channel_id", currentChannelId);
+      formData.append("new_logo", selectedLogo);
+      fetch("/update_channel_logo", {
+        method: "POST",
+        body: formData
+      })
+      .then(response => response.json())
+      .then(data => {
+        if (data.success) {
+          const row = document.querySelector(`tr[data-channel="${currentChannelId}"]`);
+          if (row) {
+            row.setAttribute("data-logo", selectedLogo);
+            const imgElem = row.querySelector("img.channel-logo");
+            if (imgElem) {
+              imgElem.src = selectedLogo;
+            }
+          }
+        } else {
+          alert("Failed to update logo.");
+        }
+      })
+      .catch(error => {
+        alert("Error updating logo: " + error);
+        console.error("Error updating logo:", error);
+      });
+    }
+    
     function updateChannelNumber(input) {
       let oldValue = input.getAttribute('data-old-value');
       let newValue = input.value.trim();
-
       if (oldValue === newValue || newValue === "") {
         input.value = oldValue;
         return;
       }
-
       let formData = new FormData();
       formData.append("current_id", oldValue);
       formData.append("new_id", newValue);
-
       fetch("/update_channel_number", {
         method: "POST",
         body: formData
@@ -300,87 +541,37 @@
         input.value = oldValue;
       });
     }
-
-    function handleEditButtonClick(event, button) {
-      event.stopPropagation();
-      const row = button.closest('tr');
-
-      const channelId = row.getAttribute('data-channel');
-      const channelName = row.getAttribute('data-name');
-      const logo = row.getAttribute('data-logo');
-      const epgTitle = row.getAttribute('data-epg');
-      const epgEntry = row.getAttribute('data-epg-entry');  
-      const streamUrl = row.getAttribute('data-stream-url');  
-
-      currentChannelId = channelId; // Save channel id for later use
-
-      document.getElementById('modal-title').innerText = channelName;
-      document.getElementById('modal-logo').src = logo;
-      document.getElementById('modal-channel').innerText = channelId;
-      document.getElementById('modal-epg').innerText = epgTitle;
-      document.getElementById('modal-stream-url').innerText = streamUrl;
-      document.getElementById('modal-stream-url').href = streamUrl;
-
-      // Clear any previous probe results.
-      document.getElementById('probe-results').innerText = "";
-      // Clear the combined input field.
-      document.getElementById('epg-input').value = "";
-
-      // Load available EPG entries from the API endpoint.
-      loadAvailableEpgEntries(epgEntry);
-
-      document.getElementById('modal').style.display = 'block';
-      document.getElementById('overlay').style.display = 'block';
-    }
-
-    function closeModal() {
-      document.getElementById('modal').style.display = 'none';
-      document.getElementById('overlay').style.display = 'none';
-    }
-
+    
     function loadAvailableEpgEntries(defaultEntry) {
       fetch('/api/epg_entries')
-        .then(response => response.json())
-        .then(data => {
-          allEpgEntries = data; // Save the full list globally.
-          const datalist = document.getElementById('epg-list');
-          datalist.innerHTML = "";
-          allEpgEntries.forEach(epgEntry => {
-            const option = document.createElement('option');
-            option.value = epgEntry;
-            datalist.appendChild(option);
-          });
-          // If a default entry is provided, set the input's value.
-          if (defaultEntry) {
-            document.getElementById('epg-input').value = defaultEntry;
-          }
-        })
-        .catch(error => {
-          console.error("Error loading EPG entries:", error);
+      .then(response => response.json())
+      .then(data => {
+        const datalist = document.getElementById('epg-list');
+        datalist.innerHTML = "";
+        data.forEach(epgEntry => {
+          const option = document.createElement('option');
+          option.value = epgEntry;
+          datalist.appendChild(option);
         });
+        if (defaultEntry) {
+          document.getElementById('epg-input').value = defaultEntry;
+        }
+      })
+      .catch(error => {
+        console.error("Error loading EPG entries:", error);
+      });
     }
-
-    function showLoading() {
-      document.getElementById('loading').style.display = 'block';
-    }
-
-    function hideLoading() {
-      document.getElementById('loading').style.display = 'none';
-    }
-
+    
     function saveEpgEntry() {
       const newEpgEntry = document.getElementById('epg-input').value;
       if (!currentChannelId) {
-        alert("Channel id not set");
+        alert("Channel ID not set");
         return;
       }
-
-      showLoading();
-
+      document.getElementById('loading').style.display = 'block';
       const formData = new FormData();
       formData.append("channel_id", currentChannelId);
       formData.append("new_epg_entry", newEpgEntry);
-
       fetch("/update_epg_entry", {
         method: "POST",
         body: formData
@@ -388,59 +579,123 @@
       .then(response => response.json())
       .then(result => {
         if (result.success) {
-          // After updating, fetch the current programme for this channel.
           fetch(`/api/current_program?channel_id=${currentChannelId}`)
-            .then(resp => resp.json())
-            .then(data => {
-              const row = document.querySelector(`tr[data-channel="${currentChannelId}"]`);
-              if (row) {
-                row.setAttribute('data-epg-entry', newEpgEntry);
-                const cells = row.getElementsByTagName("td");
-                if (cells.length >= 4) {
-                  cells[3].innerText = data.title;
-                }
+          .then(resp => resp.json())
+          .then(data => {
+            const row = document.querySelector(`tr[data-channel="${currentChannelId}"]`);
+            if (row) {
+              row.setAttribute('data-epg-entry', newEpgEntry);
+              const cells = row.getElementsByTagName("td");
+              if (cells.length >= 6) {
+                cells[4].innerText = data.title;
               }
-              hideLoading();
-              alert("EPG entry updated successfully.");
-              closeModal();
-            })
-            .catch(error => {
-              hideLoading();
-              console.error("Error fetching updated current program:", error);
-              alert("EPG entry updated, but failed to refresh current program.");
-            });
+            }
+            document.getElementById('loading').style.display = 'none';
+            alert("EPG entry updated successfully.");
+            closeModal();
+          })
+          .catch(error => {
+            document.getElementById('loading').style.display = 'none';
+            console.error("Error fetching updated current program:", error);
+            alert("EPG entry updated, but failed to refresh current program.");
+          });
         } else {
-          hideLoading();
+          document.getElementById('loading').style.display = 'none';
           alert("Failed to update EPG entry: " + result.error);
         }
       })
       .catch(error => {
-        hideLoading();
+        document.getElementById('loading').style.display = 'none';
         alert("Error updating EPG entry: " + error);
       });
     }
-
+    
     function probeStream() {
       if (!currentChannelId) {
-        alert("Channel id not set");
+        alert("Channel ID not set");
         return;
       }
       const probeDiv = document.getElementById("probe-results");
       probeDiv.innerText = "Probing stream, please wait...";
-      
       fetch(`/probe_stream?channel_id=${currentChannelId}`)
-        .then(response => response.json())
-        .then(data => {
-          probeDiv.innerText = JSON.stringify(data, null, 2);
-        })
-        .catch(error => {
-          probeDiv.innerText = "Error probing stream: " + error;
-          console.error("Error probing stream:", error);
-        });
+      .then(response => response.json())
+      .then(data => {
+        probeDiv.innerText = JSON.stringify(data, null, 2);
+      })
+      .catch(error => {
+        probeDiv.innerText = "Error probing stream: " + error;
+        console.error("Error probing stream:", error);
+      });
+    }
+    
+    function closeModal() {
+      document.getElementById('modal').style.display = 'none';
+      document.getElementById('overlay').style.display = 'none';
+    }
+    
+    function handleEnter(event, input) {
+      if (event.key === "Enter") {
+        input.blur();
+      }
     }
   </script>
-
-  <!-- Additional JavaScript from the server (if any) -->
+  
+  <!-- Sorting Script -->
+  <script>
+    document.addEventListener("DOMContentLoaded", function() {
+      const table = document.getElementById("channels-table");
+      if (!table) return;
+      
+      const headers = table.querySelectorAll("thead th");
+      headers.forEach((header, index) => {
+        header.style.cursor = "pointer";
+        header.addEventListener("click", () => {
+          sortTableByColumn(table, index);
+        });
+      });
+      
+      function getCellValue(cell) {
+        const input = cell.querySelector('input');
+        if (input) {
+          return input.value.trim();
+        } else {
+          return cell.innerText.trim();
+        }
+      }
+      
+      function sortTableByColumn(table, columnIndex) {
+        const tbody = table.querySelector("tbody");
+        const rows = Array.from(tbody.querySelectorAll("tr"));
+        
+        const header = table.querySelectorAll("thead th")[columnIndex];
+        let ascending = header.getAttribute("data-sort-asc") === "true";
+        ascending = !ascending;
+        header.setAttribute("data-sort-asc", ascending);
+        
+        table.querySelectorAll("thead th").forEach((th, idx) => {
+          if (idx !== columnIndex) {
+            th.removeAttribute("data-sort-asc");
+          }
+        });
+        
+        rows.sort((a, b) => {
+          let cellA = getCellValue(a.cells[columnIndex]);
+          let cellB = getCellValue(b.cells[columnIndex]);
+          
+          const numA = parseFloat(cellA.replace(/[^0-9.-]+/g, ""));
+          const numB = parseFloat(cellB.replace(/[^0-9.-]+/g, ""));
+          
+          if (!isNaN(numA) && !isNaN(numB)) {
+            return ascending ? numA - numB : numB - numA;
+          }
+          return ascending ? cellA.localeCompare(cellB) : cellB.localeCompare(cellA);
+        });
+        
+        rows.forEach(row => tbody.appendChild(row));
+      }
+    });
+  </script>
+  
   {{ js_script|safe }}
 </body>
 </html>

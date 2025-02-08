@@ -9,7 +9,7 @@ from fastapi.responses import (
     HTMLResponse, RedirectResponse
 )
 from fastapi.templating import Jinja2Templates
-from .config import DB_FILE, MODIFIED_EPG_DIR, EPG_DIR, HOST_IP, PORT
+from .config import DB_FILE, MODIFIED_EPG_DIR, EPG_DIR, HOST_IP, PORT, CUSTOM_LOGOS_DIR, LOGOS_DIR
 from .database import swap_channel_ids
 from .epg import update_modified_epg
 from .streaming import get_shared_stream, clear_shared_stream
@@ -342,5 +342,105 @@ def probe_stream(channel_id: int = Query(..., description="The channel ID to pro
         return JSONResponse(ffprobe_data)
     except subprocess.CalledProcessError as e:
         raise HTTPException(status_code=500, detail=f"ffprobe error: {e.stderr.decode('utf-8')}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/api/logos")
+def get_logos():
+    """
+    Return a JSON list of available logos (from both cached and custom folders).
+    """
+    logos = []
+    # List logos from the cached logos directory.
+    if os.path.exists(LOGOS_DIR):
+        for f in os.listdir(LOGOS_DIR):
+            if f.lower().endswith((".jpg", ".jpeg", ".png", ".gif")):
+                logos.append(f"/static/logos/{f}")
+    # List logos from the custom logos directory.
+    if os.path.exists(CUSTOM_LOGOS_DIR):
+        for f in os.listdir(CUSTOM_LOGOS_DIR):
+            if f.lower().endswith((".jpg", ".jpeg", ".png", ".gif")):
+                logos.append(f"/static/custom_logos/{f}")
+    return JSONResponse(logos)
+
+@router.post("/update_channel_logo")
+def update_channel_logo(channel_id: int = Form(...), new_logo: str = Form(...)):
+    """
+    Update a channel's logo in the database so the change is persistent.
+    """
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("UPDATE channels SET logo_url = ? WHERE id = ?", (new_logo, channel_id))
+    conn.commit()
+    conn.close()
+    return JSONResponse({"success": True})
+
+@router.post("/update_channel_name")
+def update_channel_name(channel_id: int = Form(...), new_name: str = Form(...)):
+    """
+    Update the channel name for the given channel_id.
+    Expects a form with 'channel_id' and 'new_name'.
+    Returns a JSON response indicating success.
+    """
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        c = conn.cursor()
+        
+        # Verify that the channel exists.
+        c.execute("SELECT id FROM channels WHERE id = ?", (channel_id,))
+        if not c.fetchone():
+            conn.close()
+            raise HTTPException(status_code=404, detail="Channel not found.")
+        
+        # Update the channel name in the database.
+        c.execute("UPDATE channels SET name = ? WHERE id = ?", (new_name, channel_id))
+        conn.commit()
+        conn.close()
+        
+        return JSONResponse({"success": True})
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/update_channel_category")
+def update_channel_category(channel_id: int = Form(...), new_category: str = Form(...)):
+    """
+    Update the channel category for the given channel_id.
+    Expects a form with 'channel_id' and 'new_category'.
+    Returns a JSON response indicating success.
+    """
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        c = conn.cursor()
+        
+        # Verify that the channel exists.
+        c.execute("SELECT id FROM channels WHERE id = ?", (channel_id,))
+        if not c.fetchone():
+            conn.close()
+            raise HTTPException(status_code=404, detail="Channel not found.")
+        
+        # Update the channel category in the database (assuming the column is named group_title).
+        c.execute("UPDATE channels SET group_title = ? WHERE id = ?", (new_category, channel_id))
+        conn.commit()
+        conn.close()
+        
+        return JSONResponse({"success": True})
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/api/categories")
+def get_categories():
+    """
+    Retrieve a list of available categories by selecting distinct group_title values from the channels table.
+    Returns a JSON list.
+    """
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute("SELECT DISTINCT group_title FROM channels")
+        rows = cursor.fetchall()
+        conn.close()
+        # Filter out None or empty values and extract the category text.
+        categories = [row[0] for row in rows if row[0]]
+        return JSONResponse(categories)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
