@@ -11,7 +11,7 @@ from fastapi.responses import (
 from fastapi.templating import Jinja2Templates
 from .config import DB_FILE, MODIFIED_EPG_DIR, EPG_DIR, HOST_IP, PORT, CUSTOM_LOGOS_DIR, LOGOS_DIR
 from .database import swap_channel_ids
-from .epg import update_modified_epg
+from .epg import update_modified_epg, update_channel_logo_in_epg
 from .streaming import get_shared_stream, clear_shared_stream
 from .m3u import load_m3u_files
 import xml.etree.ElementTree as ET
@@ -349,6 +349,7 @@ def probe_stream(channel_id: int = Query(..., description="The channel ID to pro
 def get_logos():
     """
     Return a JSON list of available logos (from both cached and custom folders).
+    For custom logos, recursively search all subdirectories.
     """
     logos = []
     # List logos from the cached logos directory.
@@ -356,11 +357,16 @@ def get_logos():
         for f in os.listdir(LOGOS_DIR):
             if f.lower().endswith((".jpg", ".jpeg", ".png", ".gif")):
                 logos.append(f"/static/logos/{f}")
-    # List logos from the custom logos directory.
+    # List logos from the custom logos directory recursively.
     if os.path.exists(CUSTOM_LOGOS_DIR):
-        for f in os.listdir(CUSTOM_LOGOS_DIR):
-            if f.lower().endswith((".jpg", ".jpeg", ".png", ".gif")):
-                logos.append(f"/static/custom_logos/{f}")
+        for root, dirs, files in os.walk(CUSTOM_LOGOS_DIR):
+            for f in files:
+                if f.lower().endswith((".jpg", ".jpeg", ".png", ".gif")):
+                    # Compute the path relative to the CUSTOM_LOGOS_DIR.
+                    rel_path = os.path.relpath(os.path.join(root, f), CUSTOM_LOGOS_DIR)
+                    # Normalize the path separator to '/' so it works in a URL.
+                    rel_path = rel_path.replace("\\", "/")
+                    logos.append(f"/static/custom_logos/{rel_path}")
     return JSONResponse(logos)
 
 @router.post("/update_channel_logo")
@@ -373,6 +379,9 @@ def update_channel_logo(channel_id: int = Form(...), new_logo: str = Form(...)):
     c.execute("UPDATE channels SET logo_url = ? WHERE id = ?", (new_logo, channel_id))
     conn.commit()
     conn.close()
+
+    update_channel_logo_in_epg(channel_id, new_logo)
+
     return JSONResponse({"success": True})
 
 @router.post("/update_channel_name")

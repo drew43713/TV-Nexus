@@ -139,9 +139,18 @@
       height: 50px;
       cursor: pointer;
       border: 2px solid transparent;
+      box-shadow: 0px 0px 5px rgba(0, 0, 0, 0.3);
+      background-color: #e0e0e0; /* Darker gray background for contrast */
     }
     .logo-picker-modal img.selected {
       border-color: blue;
+    }
+    /* Logo search input in logo picker */
+    #logo-search {
+      width: 100%;
+      padding: 5px;
+      margin-bottom: 10px;
+      box-sizing: border-box;
     }
   </style>
   <script>
@@ -234,6 +243,8 @@
   <div class="logo-picker-modal" id="logo-picker-modal" style="display:none; position: fixed; top:50%; left:50%; transform: translate(-50%, -50%); background: #fff; padding: 20px; z-index:1200;">
     <div class="logo-picker-content">
       <h3>Select a Logo</h3>
+      <!-- New search input for logos -->
+      <input type="text" id="logo-search" placeholder="Search logos by filename..." />
       <div id="logo-picker-container" style="display: flex; flex-wrap: wrap; justify-content: center;"></div>
       <button onclick="closeLogoPicker()">Cancel</button>
     </div>
@@ -249,6 +260,7 @@
   <script>
     let currentChannelId = null;
     let selectedLogo = ""; // holds the currently selected logo URL
+    let allLogos = []; // stores all logos fetched from /api/logos
 
     // Called when the "Edit" button is clicked.
     function handleEditButtonClick(event, button) {
@@ -450,9 +462,23 @@
       fetch('/api/logos')
       .then(response => response.json())
       .then(data => {
-        const pickerContainer = document.getElementById('logo-picker-container');
-        pickerContainer.innerHTML = "";
-        data.forEach(logoUrl => {
+        allLogos = data;  // store all logos globally
+        // Display logos with no filter initially.
+        displayLogos("");
+        document.getElementById('logo-picker-overlay').style.display = 'block';
+        document.getElementById('logo-picker-modal').style.display = 'block';
+      })
+      .catch(error => console.error("Error fetching logos:", error));
+    }
+    
+    // Function to display logos based on a filter (matches filename)
+    function displayLogos(filterText) {
+      const pickerContainer = document.getElementById('logo-picker-container');
+      pickerContainer.innerHTML = "";
+      const lowerFilter = filterText.toLowerCase();
+      allLogos.forEach(logoUrl => {
+        const filename = logoUrl.split('/').pop().toLowerCase();
+        if (filename.includes(lowerFilter)) {
           const logoImg = document.createElement("img");
           logoImg.src = logoUrl;
           if (logoUrl === selectedLogo) {
@@ -462,6 +488,7 @@
             e.stopPropagation();
             selectedLogo = logoUrl;
             document.getElementById('modal-logo').src = logoUrl;
+            // Remove selected class from others
             Array.from(pickerContainer.children).forEach(child => {
               child.classList.remove("selected");
             });
@@ -470,12 +497,19 @@
             closeLogoPicker();
           };
           pickerContainer.appendChild(logoImg);
-        });
-        document.getElementById('logo-picker-overlay').style.display = 'block';
-        document.getElementById('logo-picker-modal').style.display = 'block';
-      })
-      .catch(error => console.error("Error fetching logos:", error));
+        }
+      });
     }
+    
+    // Listen for keyup events on the logo search input.
+    document.addEventListener("DOMContentLoaded", function() {
+      const logoSearchInput = document.getElementById("logo-search");
+      if (logoSearchInput) {
+        logoSearchInput.addEventListener("keyup", function() {
+          displayLogos(this.value);
+        });
+      }
+    });
     
     function closeLogoPicker() {
       document.getElementById('logo-picker-overlay').style.display = 'none';

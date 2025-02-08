@@ -323,3 +323,43 @@ def update_program_data_for_channel(channel_id: int):
     # Save the updated modified EPG file.
     tree.write(combined_epg_file, encoding="utf-8", xml_declaration=True)
     print(f"[SUCCESS] Updated programme data for channel {channel_id} in modified EPG file.")
+
+def update_channel_logo_in_epg(channel_id: int, new_logo: str):
+    """
+    Update the <icon> element for the specified channel in the modified EPG file.
+    If the new_logo is relative, it prefixes it with the full base URL.
+    """
+    # Construct the base URL.
+    base_url = f"http://{HOST_IP}:{PORT}"
+    # If new_logo is a relative URL, prepend the base URL.
+    if new_logo.startswith("/"):
+        full_logo_url = f"{base_url}{new_logo}"
+    else:
+        full_logo_url = new_logo
+
+    combined_epg_file = os.path.join(MODIFIED_EPG_DIR, "EPG.xml")
+    try:
+        tree = ET.parse(combined_epg_file)
+        root = tree.getroot()
+        updated = False
+
+        # Find the channel element and update its icon src attribute.
+        for channel in root.findall("channel"):
+            if channel.get("id") == str(channel_id):
+                icon_el = channel.find("icon")
+                if icon_el is not None:
+                    icon_el.set("src", full_logo_url)
+                else:
+                    icon_el = ET.Element("icon", src=full_logo_url)
+                    channel.append(icon_el)
+                updated = True
+                break
+
+        if updated:
+            tree.write(combined_epg_file, encoding="utf-8", xml_declaration=True)
+            print(f"[INFO] Updated logo in modified EPG for channel {channel_id} with URL: {full_logo_url}")
+        else:
+            print(f"[WARN] No channel element with id {channel_id} found in modified EPG.")
+
+    except Exception as e:
+        print("Error updating logo in modified EPG file:", e)
