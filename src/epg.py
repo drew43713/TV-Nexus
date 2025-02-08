@@ -3,14 +3,6 @@ import sqlite3
 import html
 import gzip
 import xml.etree.ElementTree as ET
-from .config import EPG_DIR, MODIFIED_EPG_DIR, DB_FILE
-
-
-import os
-import sqlite3
-import html
-import gzip
-import xml.etree.ElementTree as ET
 from .config import EPG_DIR, MODIFIED_EPG_DIR, DB_FILE, HOST_IP, PORT
 
 def parse_epg_files():
