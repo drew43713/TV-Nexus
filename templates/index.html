@@ -117,7 +117,8 @@
 </head>
 <body>
   <h1>IPTV Channel List</h1>
-  <table>
+  <!-- Note: The table has an ID ("channels-table") so we can reference it later -->
+  <table id="channels-table">
     <thead>
       <tr>
         <th>Channel #</th>
@@ -154,6 +155,7 @@
     </tbody>
   </table>
   
+  <!-- Modal and overlay -->
   <div class="overlay" id="overlay" onclick="closeModal()"></div>
   <div class="modal" id="modal">
     <div class="modal-content">
@@ -184,8 +186,82 @@
   <!-- Loading overlay -->
   <div id="loading">Please wait while the EPG updates...</div>
 
+  <!-- Table Sorting Script -->
   <script>
-    // Global variable for channel id and for storing all EPG entries.
+    document.addEventListener("DOMContentLoaded", function() {
+      const table = document.getElementById("channels-table");
+      if (!table) return;
+      
+      // Get all header cells from the table.
+      const headers = table.querySelectorAll("thead th");
+      
+      headers.forEach((header, index) => {
+        header.style.cursor = "pointer"; // indicate clickability
+        header.addEventListener("click", () => {
+          sortTableByColumn(table, index);
+        });
+      });
+      
+      /**
+       * Returns the text content of a cell. If the cell contains an input element,
+       * the function returns the value of that input.
+       * @param {HTMLTableCellElement} cell - The cell element.
+       */
+      function getCellValue(cell) {
+        const input = cell.querySelector('input');
+        if (input) {
+          return input.value.trim();
+        } else {
+          return cell.innerText.trim();
+        }
+      }
+      
+      /**
+       * Sorts the rows of a table's tbody based on the content of a given column.
+       * @param {HTMLTableElement} table - The table element.
+       * @param {number} columnIndex - The index of the column to sort by.
+       */
+      function sortTableByColumn(table, columnIndex) {
+        const tbody = table.querySelector("tbody");
+        const rows = Array.from(tbody.querySelectorAll("tr"));
+        
+        // Toggle the sorting order for the clicked header.
+        const header = table.querySelectorAll("thead th")[columnIndex];
+        let ascending = header.getAttribute("data-sort-asc") === "true";
+        ascending = !ascending;
+        header.setAttribute("data-sort-asc", ascending);
+        
+        // Remove sort indicators from other headers.
+        table.querySelectorAll("thead th").forEach((th, idx) => {
+          if (idx !== columnIndex) {
+            th.removeAttribute("data-sort-asc");
+          }
+        });
+        
+        // Sort rows based on the cell value.
+        rows.sort((a, b) => {
+          let cellA = getCellValue(a.cells[columnIndex]);
+          let cellB = getCellValue(b.cells[columnIndex]);
+          
+          // Attempt numeric conversion if possible.
+          const numA = parseFloat(cellA.replace(/[^0-9.-]+/g, ""));
+          const numB = parseFloat(cellB.replace(/[^0-9.-]+/g, ""));
+          if (!isNaN(numA) && !isNaN(numB)) {
+            return ascending ? numA - numB : numB - numA;
+          }
+          
+          // Fallback to string comparison.
+          return ascending ? cellA.localeCompare(cellB) : cellB.localeCompare(cellA);
+        });
+        
+        // Re-append the sorted rows.
+        rows.forEach(row => tbody.appendChild(row));
+      }
+    });
+  </script>
+
+  <!-- Existing JavaScript functionality -->
+  <script>
     let currentChannelId = null;
     let allEpgEntries = [];
 
@@ -262,7 +338,6 @@
       document.getElementById('overlay').style.display = 'none';
     }
 
-    // Load available EPG entries and populate the datalist.
     function loadAvailableEpgEntries(defaultEntry) {
       fetch('/api/epg_entries')
         .then(response => response.json())
@@ -285,17 +360,14 @@
         });
     }
 
-    // Show the loading overlay.
     function showLoading() {
       document.getElementById('loading').style.display = 'block';
     }
 
-    // Hide the loading overlay.
     function hideLoading() {
       document.getElementById('loading').style.display = 'none';
     }
 
-    // When "Save EPG" is clicked, update the server and then update the table.
     function saveEpgEntry() {
       const newEpgEntry = document.getElementById('epg-input').value;
       if (!currentChannelId) {
@@ -348,7 +420,6 @@
       });
     }
 
-    // Function to probe the stream for the current channel.
     function probeStream() {
       if (!currentChannelId) {
         alert("Channel id not set");
@@ -369,6 +440,7 @@
     }
   </script>
 
+  <!-- Additional JavaScript from the server (if any) -->
   {{ js_script|safe }}
 </body>
 </html>
