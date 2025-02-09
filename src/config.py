@@ -70,8 +70,7 @@ TUNER_COUNT = config["TUNER_COUNT"]
 def load_config():
     try:
         with open(CONFIG_FILE_PATH, "r") as f:
-            config = json.load(f)
+            return json.load(f)
     except Exception as e:
         print("Error loading config:", e)
-        config = DEFAULT_CONFIG.copy()
-    return config
+        return DEFAULT_CONFIG.copy()
