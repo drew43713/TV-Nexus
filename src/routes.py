@@ -1,5 +1,6 @@
 import os
 import gzip
+import time
 import sqlite3
 import subprocess
 import json
@@ -11,7 +12,7 @@ from fastapi.responses import (
 from fastapi.templating import Jinja2Templates
 from .config import DB_FILE, MODIFIED_EPG_DIR, EPG_DIR, HOST_IP, PORT, CUSTOM_LOGOS_DIR, LOGOS_DIR
 from .database import swap_channel_ids
-from .epg import update_modified_epg, update_channel_logo_in_epg
+from .epg import update_modified_epg, update_channel_logo_in_epg, update_channel_metadata_in_epg, update_program_data_for_channel
 from .streaming import get_shared_stream, clear_shared_stream
 from .m3u import load_m3u_files
 import xml.etree.ElementTree as ET
@@ -19,6 +20,11 @@ from datetime import datetime
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
+
+# Global cache variables.
+cached_epg_entries = None
+epg_entries_last_updated = 0
+CACHE_DURATION_SECONDS = 300  # Cache for 5 minutes
 
 # Define a base URL using the config file values.
 BASE_URL = f"http://{HOST_IP}:{PORT}"
@@ -219,31 +225,67 @@ def update_channel_number(current_id: int = Form(...), new_id: int = Form(...)):
 def get_epg_entries():
     """
     Return a JSON list of available EPG entries in alphabetical order.
+    This version scans only the raw EPG files and includes only channels
+    that have at least one associated programme.
+    Results are cached to improve efficiency.
     """
+    global cached_epg_entries, epg_entries_last_updated
+    current_time = time.time()
+    # Return cached result if within the cache duration.
+    if cached_epg_entries is not None and (current_time - epg_entries_last_updated) < CACHE_DURATION_SECONDS:
+        return JSONResponse(sorted(list(cached_epg_entries)))
+    
     epg_entries = set()
-    try:
-        for f in os.listdir(EPG_DIR):
-            if f.lower().endswith((".xml", ".xmltv", ".gz")):
-                file_path = os.path.join(EPG_DIR, f)
+    
+    def process_epg_root(root):
+        """
+        Process an XML root from an EPG file. Build a mapping of channel IDs
+        to display names and record those channel IDs that have at least one programme.
+        Only channels with programmes are added to the global epg_entries set.
+        """
+        channels_map = {}
+        # Build a mapping from channel id to display name.
+        for ch in root.findall("channel"):
+            disp_el = ch.find("display-name")
+            if disp_el is not None and disp_el.text:
+                channels_map[ch.get("id")] = disp_el.text.strip()
+        channels_with_programmes = set()
+        # Collect channel ids that appear in any programme element.
+        for prog in root.findall("programme"):
+            chan = prog.get("channel")
+            if chan:
+                channels_with_programmes.add(chan)
+        # Add the display name only if there is at least one programme for the channel.
+        for cid, dname in channels_map.items():
+            if cid in channels_with_programmes:
+                epg_entries.add(dname)
+    
+    # Iterate over all raw EPG files.
+    for filename in os.listdir(EPG_DIR):
+        if filename.lower().endswith((".xml", ".xmltv", ".gz")):
+            file_path = os.path.join(EPG_DIR, filename)
+            try:
                 with open(file_path, "rb") as f_obj:
+                    # Read first two bytes to check for gzip signature.
                     magic = f_obj.read(2)
                     f_obj.seek(0)
                     if magic == b'\x1f\x8b':
+                        # Process gzipped file.
                         with gzip.open(f_obj, "rb") as gz_obj:
                             decompressed_data = gz_obj.read()
                         root = ET.fromstring(decompressed_data)
-                        tree = ET.ElementTree(root)
                     else:
+                        # Process a normal XML file.
                         tree = ET.parse(f_obj)
                         root = tree.getroot()
-                for channel_el in root.findall("channel"):
-                    display_el = channel_el.find("display-name")
-                    if display_el is not None and display_el.text:
-                        epg_entries.add(display_el.text.strip())
-        # Return the sorted list
-        return JSONResponse(sorted(list(epg_entries)))
-    except Exception as e:
-        return JSONResponse({"error": str(e)}, status_code=500)
+                process_epg_root(root)
+            except Exception as e:
+                print(f"Error processing raw EPG file {file_path}: {e}")
+    
+    # Cache and return the sorted list of entries.
+    cached_epg_entries = epg_entries
+    epg_entries_last_updated = current_time
+    return JSONResponse(sorted(list(epg_entries)))
 
 @router.post("/update_epg_entry")
 def update_epg_entry(channel_id: int = Form(...), new_epg_entry: str = Form(...)):
@@ -464,24 +506,26 @@ def update_channel_properties(
     new_epg_entry: str = Form(...)
 ):
     try:
+        conn = sqlite3.connect(DB_FILE)
+        c = conn.cursor()
+        # Get the current EPG entry (tvg_name) for this channel.
+        c.execute("SELECT tvg_name FROM channels WHERE id = ?", (channel_id,))
+        row = c.fetchone()
+        if not row:
+            conn.close()
+            return JSONResponse({"success": False, "error": "Channel not found."})
+        old_epg_entry = row[0] if row[0] is not None else ""
+
         # If the channel number has changed, perform the swap logic.
         updated_channel_id = channel_id
         if channel_id != new_channel_number:
             swap = swap_channel_ids(channel_id, new_channel_number)
             update_modified_epg(channel_id, new_channel_number, swap)
-            # Clear any active shared streams for both channel IDs.
             clear_shared_stream(channel_id)
             clear_shared_stream(new_channel_number)
             updated_channel_id = new_channel_number
 
-        # Now update the channel properties (name, category, logo, and EPG entry)
-        conn = sqlite3.connect(DB_FILE)
-        c = conn.cursor()
-        # Verify that the channel exists using the updated channel id.
-        c.execute("SELECT id FROM channels WHERE id = ?", (updated_channel_id,))
-        if not c.fetchone():
-            conn.close()
-            return JSONResponse({"success": False, "error": "Channel not found."})
+        # Update channel properties (name, category, logo, and EPG entry) in the database.
         c.execute(
             "UPDATE channels SET name = ?, group_title = ?, logo_url = ?, tvg_name = ? WHERE id = ?",
             (new_name, new_category, new_logo, new_epg_entry, updated_channel_id)
@@ -489,9 +533,12 @@ def update_channel_properties(
         conn.commit()
         conn.close()
 
-        # Update the programme data in the modified EPG file for this channel.
-        from .epg import update_program_data_for_channel
-        update_program_data_for_channel(updated_channel_id)
+        # If the EPG entry (tvg_name) has changed, reparse the raw EPG files for that channel;
+        # otherwise, just update the metadata in the modified EPG file.
+        if new_epg_entry != old_epg_entry:
+            update_program_data_for_channel(updated_channel_id)
+        else:
+            update_channel_metadata_in_epg(updated_channel_id, new_name, new_logo)
 
         return JSONResponse({"success": True})
     except Exception as e:

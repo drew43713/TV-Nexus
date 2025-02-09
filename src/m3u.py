@@ -3,19 +3,10 @@ import sqlite3
 import html
 import hashlib
 import requests
+import re
 from .config import M3U_DIR, DB_FILE, LOGOS_DIR
 from .epg import parse_epg_files
 
-import os
-import hashlib
-import requests
-from .config import LOGOS_DIR
-
-import os
-import re
-import hashlib
-import requests
-from .config import LOGOS_DIR
 
 def cache_logo(logo_url: str, channel_identifier: str = None) -> str:
     """

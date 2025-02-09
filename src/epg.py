@@ -5,6 +5,8 @@ import gzip
 import xml.etree.ElementTree as ET
 from .config import EPG_DIR, MODIFIED_EPG_DIR, DB_FILE, HOST_IP, PORT
 
+boot_cached_epg_entries = set()
+
 def parse_epg_files():
     print("Parsing EPG files...")
     """
@@ -355,3 +357,37 @@ def update_channel_logo_in_epg(channel_id: int, new_logo: str):
 
     except Exception as e:
         print("Error updating logo in modified EPG file:", e)
+
+def update_channel_metadata_in_epg(channel_id: int, new_name: str, new_logo: str):
+    """
+    Update the channel metadata (display name and logo) in the modified EPG file
+    without reprocessing the raw EPG files.
+    """
+    combined_epg_file = os.path.join(MODIFIED_EPG_DIR, "EPG.xml")
+    try:
+        tree = ET.parse(combined_epg_file)
+        root = tree.getroot()
+        updated = False
+        # Loop through <channel> elements and update the matching channel.
+        for ch in root.findall("channel"):
+            if ch.get("id") == str(channel_id):
+                # Update or create the <display-name> element.
+                disp_el = ch.find("display-name")
+                if disp_el is not None:
+                    disp_el.text = new_name
+                else:
+                    disp_el = ET.Element("display-name")
+                    disp_el.text = new_name
+                    ch.append(disp_el)
+                # Update or create the <icon> element.
+                icon_el = ch.find("icon")
+                if icon_el is not None:
+                    icon_el.set("src", new_logo)
+                else:
+                    icon_el = ET.Element("icon", src=new_logo)
+                    ch.append(icon_el)
+                updated = True
+        if updated:
+            tree.write(combined_epg_file, encoding="utf-8", xml_declaration=True)
+    except Exception as e:
+        print("Error updating channel metadata in modified EPG file:", e)

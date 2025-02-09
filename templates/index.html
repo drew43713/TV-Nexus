@@ -198,7 +198,8 @@
                  onkeydown="handleEnter(event, this)">
         </td>
         <td>
-          <img src="{{ channel[4] }}" class="channel-logo" />
+          <!-- Clicking the icon calls openLogoPickerForChannel() -->
+          <img src="{{ channel[4] }}" class="channel-logo" onclick="openLogoPickerForChannel('{{ channel[0] }}', '{{ channel[4] }}')" />
         </td>
         <td>{{ channel[1] }}</td>
         <td>{{ channel[5] }}</td>
@@ -215,13 +216,9 @@
   <div class="overlay" id="overlay" onclick="closeModal()"></div>
   <div class="modal" id="modal">
     <div class="modal-content">
-      <!-- Inline-editable channel name header -->
       <h2 id="modal-title" onclick="editChannelName()"></h2>
-      <!-- Inline-editable category field with datalist support -->
       <p id="modal-category-text" onclick="editChannelCategory()"></p>
-      <!-- Channel logo; clicking opens the logo picker -->
       <img id="modal-logo" src="" alt="Channel Logo" onclick="openLogoPicker()" />
-      <!-- Editable channel number input -->
       <p>
         <strong>Channel Number:</strong>
         <input type="number" id="modal-channel-number" value="" style="width:70px;" onkeydown="handleEnter(event, this)" onblur="updateModalChannelNumber(this)">
@@ -233,19 +230,13 @@
         <strong>Stream URL:</strong> 
         <a id="modal-stream-url" href="#" target="_blank">Click to Stream</a>
       </p>
-      
-      <!-- EPG Selection Section -->
       <p>
         <label for="epg-input"><strong>Select EPG Entry:</strong></label>
         <input type="text" id="epg-input" placeholder="Type to search..." list="epg-list">
         <datalist id="epg-list"></datalist>
       </p>
-      
-      <!-- (Probe Stream remains available if needed) -->
       <button class="probe-button" onclick="probeStream()">Probe Stream</button>
       <div id="probe-results"></div>
-      
-      <!-- Save Changes button that updates all properties including channel number -->
       <button class="save-all-button" onclick="saveAllChanges()">Save Changes</button>
       <button onclick="closeModal()">Close</button>
     </div>
@@ -262,23 +253,121 @@
     </div>
   </div>
   
-  <!-- Datalist for available categories -->
   <datalist id="category-list"></datalist>
   
-  <!-- Loading overlay -->
   <div id="loading">Please wait while the EPG updates...</div>
   
   <!-- JavaScript Functions -->
   <script>
-    // Global variables
     let currentChannelId = null;
-    let editedChannelNumber = null;
     let selectedLogo = "";
     let allLogos = [];
     let editedChannelName = "";
     let editedChannelCategory = "";
+    // Global variable to track if the logo picker is being used from the list view.
+    let logoPickerTargetChannelId = null;
+
+    // Called when an icon in the list is clicked.
+    function openLogoPickerForChannel(channelId, currentLogo) {
+      logoPickerTargetChannelId = channelId;
+      selectedLogo = currentLogo;
+      fetch('/api/logos')
+      .then(response => response.json())
+      .then(data => {
+        allLogos = data;
+        document.getElementById("logo-search").value = "";
+        displayLogos("");
+        document.getElementById('logo-picker-overlay').style.display = 'block';
+        document.getElementById('logo-picker-modal').style.display = 'block';
+        document.getElementById('logo-picker-modal').scrollTop = 0;
+      })
+      .catch(error => console.error("Error fetching logos:", error));
+    }
+
+    // Existing openLogoPicker() for modal usage.
+    function openLogoPicker() {
+      logoPickerTargetChannelId = null;
+      fetch('/api/logos')
+      .then(response => response.json())
+      .then(data => {
+        allLogos = data;
+        document.getElementById("logo-search").value = "";
+        displayLogos("");
+        document.getElementById('logo-picker-overlay').style.display = 'block';
+        document.getElementById('logo-picker-modal').style.display = 'block';
+        document.getElementById('logo-picker-modal').scrollTop = 0;
+      })
+      .catch(error => console.error("Error fetching logos:", error));
+    }
     
-    // Called when the "Edit" button is clicked.
+    function displayLogos(filterText) {
+      const pickerContainer = document.getElementById('logo-picker-container');
+      pickerContainer.innerHTML = "";
+      const lowerFilter = filterText.toLowerCase();
+      allLogos.forEach(logoUrl => {
+        const filename = logoUrl.split('/').pop().toLowerCase();
+        if (filename.includes(lowerFilter)) {
+          const logoImg = document.createElement("img");
+          logoImg.src = logoUrl;
+          if (logoUrl === selectedLogo) logoImg.classList.add("selected");
+          logoImg.onclick = function(e) {
+            e.stopPropagation();
+            selectedLogo = logoUrl;
+            if (logoPickerTargetChannelId !== null) {
+              // Logo picker opened from list view; update the channel immediately.
+              let formData = new FormData();
+              formData.append("channel_id", logoPickerTargetChannelId);
+              formData.append("new_logo", logoUrl);
+              fetch("/update_channel_logo", {
+                method: "POST",
+                body: formData
+              })
+              .then(response => response.json())
+              .then(data => {
+                if (data.success) {
+                  let row = document.querySelector(`tr[data-channel="${logoPickerTargetChannelId}"]`);
+                  if (row) {
+                    let img = row.querySelector("img.channel-logo");
+                    if (img) {
+                      img.src = logoUrl;
+                    }
+                  }
+                } else {
+                  alert("Failed to update channel logo: " + data.error);
+                }
+              })
+              .catch(error => alert("Error updating channel logo: " + error))
+              .finally(() => {
+                logoPickerTargetChannelId = null;
+                closeLogoPicker();
+              });
+            } else {
+              // If not from list view, update modal.
+              document.getElementById('modal-logo').src = logoUrl;
+              Array.from(pickerContainer.children).forEach(child => child.classList.remove("selected"));
+              logoImg.classList.add("selected");
+              closeLogoPicker();
+            }
+          };
+          pickerContainer.appendChild(logoImg);
+        }
+      });
+    }
+    
+    document.addEventListener("DOMContentLoaded", function() {
+      const logoSearchInput = document.getElementById("logo-search");
+      if (logoSearchInput) {
+        logoSearchInput.addEventListener("keyup", function() {
+          displayLogos(this.value);
+        });
+      }
+    });
+    
+    function closeLogoPicker() {
+      document.getElementById('logo-picker-overlay').style.display = 'none';
+      document.getElementById('logo-picker-modal').style.display = 'none';
+    }
+    
     function handleEditButtonClick(event, button) {
       event.stopPropagation();
       const row = button.closest('tr');
@@ -291,7 +380,6 @@
       const streamUrl = row.getAttribute('data-stream-url');
       
       currentChannelId = channelId;
-      editedChannelNumber = channelId;  // initialize with current channel id
       selectedLogo = currentLogoUrl;
       editedChannelName = channelName;
       editedChannelCategory = channelCategory;
@@ -318,7 +406,6 @@
       document.getElementById('overlay').style.display = 'block';
     }
     
-    // Inline editing for channel name.
     function editChannelName() {
       const modalTitle = document.getElementById('modal-title');
       const currentName = modalTitle.innerText;
@@ -348,7 +435,6 @@
       input.parentNode.replaceChild(h2, input);
     }
     
-    // Inline editing for channel category.
     function editChannelCategory() {
       const modalCategory = document.getElementById('modal-category-text');
       const currentCategory = modalCategory.innerText.replace(/^Category:\s*/, "");
@@ -400,61 +486,8 @@
       input.parentNode.replaceChild(p, input);
     }
     
-    // Update channel number from modal input.
     function updateModalChannelNumber(input) {
-      editedChannelNumber = input.value;
-    }
-    
-    // Logo Picker functions.
-    function openLogoPicker() {
-      fetch('/api/logos')
-      .then(response => response.json())
-      .then(data => {
-        allLogos = data;
-        document.getElementById("logo-search").value = "";
-        displayLogos("");
-        document.getElementById('logo-picker-overlay').style.display = 'block';
-        document.getElementById('logo-picker-modal').style.display = 'block';
-        document.getElementById('logo-picker-modal').scrollTop = 0;
-      })
-      .catch(error => console.error("Error fetching logos:", error));
-    }
-    
-    function displayLogos(filterText) {
-      const pickerContainer = document.getElementById('logo-picker-container');
-      pickerContainer.innerHTML = "";
-      const lowerFilter = filterText.toLowerCase();
-      allLogos.forEach(logoUrl => {
-        const filename = logoUrl.split('/').pop().toLowerCase();
-        if (filename.includes(lowerFilter)) {
-          const logoImg = document.createElement("img");
-          logoImg.src = logoUrl;
-          if (logoUrl === selectedLogo) logoImg.classList.add("selected");
-          logoImg.onclick = function(e) {
-            e.stopPropagation();
-            selectedLogo = logoUrl;
-            document.getElementById('modal-logo').src = logoUrl;
-            Array.from(pickerContainer.children).forEach(child => child.classList.remove("selected"));
-            logoImg.classList.add("selected");
-            closeLogoPicker();
-          };
-          pickerContainer.appendChild(logoImg);
-        }
-      });
-    }
-    
-    document.addEventListener("DOMContentLoaded", function() {
-      const logoSearchInput = document.getElementById("logo-search");
-      if (logoSearchInput) {
-        logoSearchInput.addEventListener("keyup", function() {
-          displayLogos(this.value);
-        });
-      }
-    });
-    
-    function closeLogoPicker() {
-      document.getElementById('logo-picker-overlay').style.display = 'none';
-      document.getElementById('logo-picker-modal').style.display = 'none';
+      // No action required here as the value is directly read during save.
     }
     
     function updateChannelNumber(input) {
@@ -494,16 +527,18 @@
       .catch(error => console.error("Error loading EPG entries:", error));
     }
     
-    // Save all changes: update channel properties (name, category, logo, EPG entry, and channel number)
     function saveAllChanges() {
       if (!currentChannelId) {
         alert("Channel ID not set.");
         return;
       }
+      const modalChannelNumberInput = document.getElementById('modal-channel-number');
+      const updatedChannelNumber = modalChannelNumberInput.value;
+      
       const epgEntry = document.getElementById('epg-input').value;
       const formData = new FormData();
       formData.append("channel_id", currentChannelId);
-      formData.append("new_channel_number", editedChannelNumber);
+      formData.append("new_channel_number", updatedChannelNumber);
       formData.append("new_name", editedChannelName);
       formData.append("new_category", editedChannelCategory);
       formData.append("new_logo", selectedLogo);
@@ -517,29 +552,7 @@
       .then(data => {
         if (data.success) {
           alert("Channel properties and EPG entry updated successfully!");
-          const row = document.querySelector(`tr[data-channel="${currentChannelId}"]`);
-          if (row) {
-            row.setAttribute("data-name", editedChannelName);
-            row.setAttribute("data-category", editedChannelCategory);
-            row.setAttribute("data-logo", selectedLogo);
-            row.setAttribute("data-epg-entry", epgEntry);
-            const cells = row.getElementsByTagName("td");
-            if (cells.length >= 3) cells[2].innerText = editedChannelName;
-            if (cells.length >= 4) cells[3].innerText = editedChannelCategory;
-            const logoImg = row.querySelector("img.channel-logo");
-            if (logoImg) logoImg.src = selectedLogo;
-            // Refresh the EPG cell by fetching the current program data using the (possibly new) channel number.
-            fetch(`/api/current_program?channel_id=${editedChannelNumber}`)
-              .then(resp => resp.json())
-              .then(epgData => {
-                row.setAttribute("data-epg", epgData.title);
-                if (cells.length >= 5) cells[4].innerText = epgData.title;
-              })
-              .catch(err => {
-                console.error("Error fetching updated current program:", err);
-              });
-          }
-          closeModal();
+          window.location.reload();
         } else {
           alert("Failed to update channel properties: " + data.error);
         }
@@ -578,7 +591,6 @@
     }
   </script>
   
-  <!-- Sorting Script -->
   <script>
     document.addEventListener("DOMContentLoaded", function() {
       const table = document.getElementById("channels-table");
