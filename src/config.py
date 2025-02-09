@@ -66,3 +66,11 @@ DB_FILE = config["DB_FILE"]
 LOGOS_DIR = config["LOGOS_DIR"]
 CUSTOM_LOGOS_DIR = config["CUSTOM_LOGOS_DIR"]
 TUNER_COUNT = config["TUNER_COUNT"]
+
+def load_config():
+    try:
+        with open(CONFIG_FILE_PATH, "r") as f:
+            return json.load(f)
+    except Exception as e:
+        print("Error loading config:", e)
+        return DEFAULT_CONFIG.copy()

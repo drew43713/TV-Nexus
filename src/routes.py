@@ -10,7 +10,7 @@ from fastapi.responses import (
     HTMLResponse, RedirectResponse
 )
 from fastapi.templating import Jinja2Templates
-from .config import DB_FILE, MODIFIED_EPG_DIR, EPG_DIR, HOST_IP, PORT, CUSTOM_LOGOS_DIR, LOGOS_DIR, TUNER_COUNT
+from .config import DB_FILE, MODIFIED_EPG_DIR, EPG_DIR, HOST_IP, PORT, CUSTOM_LOGOS_DIR, LOGOS_DIR, TUNER_COUNT, load_config
 from .database import swap_channel_ids
 from .epg import update_modified_epg, update_channel_logo_in_epg, update_channel_metadata_in_epg, update_program_data_for_channel
 from .streaming import get_shared_stream, clear_shared_stream
@@ -31,8 +31,9 @@ BASE_URL = f"http://{HOST_IP}:{PORT}"
 
 @router.get("/discover.json")
 def discover(request: Request):
-    # Use BASE_URL from config.
-    base_url = BASE_URL
+    config = load_config()  # Re-read configuration from file
+    tuner_count = config.get("TUNER_COUNT", 1)
+    base_url = f"http://{HOST_IP}:{PORT}"
     return JSONResponse({
         "FriendlyName": "IPTV HDHomeRun",
         "Manufacturer": "Custom",
@@ -43,7 +44,7 @@ def discover(request: Request):
         "DeviceAuth": "testauth",
         "BaseURL": base_url,
         "LineupURL": f"{base_url}/lineup.json",
-        "TunerCount": TUNER_COUNT
+        "TunerCount": tuner_count
     })
 
 @router.get("/lineup.json")
