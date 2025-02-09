@@ -10,7 +10,7 @@ from fastapi.responses import (
     HTMLResponse, RedirectResponse
 )
 from fastapi.templating import Jinja2Templates
-from .config import DB_FILE, MODIFIED_EPG_DIR, EPG_DIR, HOST_IP, PORT, CUSTOM_LOGOS_DIR, LOGOS_DIR
+from .config import DB_FILE, MODIFIED_EPG_DIR, EPG_DIR, HOST_IP, PORT, CUSTOM_LOGOS_DIR, LOGOS_DIR, TUNER_COUNT
 from .database import swap_channel_ids
 from .epg import update_modified_epg, update_channel_logo_in_epg, update_channel_metadata_in_epg, update_program_data_for_channel
 from .streaming import get_shared_stream, clear_shared_stream
@@ -42,7 +42,8 @@ def discover(request: Request):
         "DeviceID": "12345678",
         "DeviceAuth": "testauth",
         "BaseURL": base_url,
-        "LineupURL": f"{base_url}/lineup.json"
+        "LineupURL": f"{base_url}/lineup.json",
+        "TunerCount": TUNER_COUNT
     })
 
 @router.get("/lineup.json")

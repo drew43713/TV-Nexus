@@ -13,7 +13,8 @@ DEFAULT_CONFIG = {
     "MODIFIED_EPG_DIR": os.path.join("config", "epg_modified"),
     "DB_FILE": os.path.join("config", "iptv_channels.db"),
     "LOGOS_DIR": os.path.join("static", "logos"),
-    "CUSTOM_LOGOS_DIR": os.path.join("static", "custom_logos")
+    "CUSTOM_LOGOS_DIR": os.path.join("static", "custom_logos"),
+    "TUNER_COUNT": 1    # <-- New tuner count (default 1)
 }
 
 # Ensure the config directory exists.
@@ -27,7 +28,6 @@ if os.path.exists(CONFIG_FILE_PATH):
     try:
         with open(CONFIG_FILE_PATH, "r") as f:
             file_config = json.load(f)
-        # Update our config with values from the file.
         config.update(file_config)
     except Exception as e:
         print(f"Error reading config file: {e}")
@@ -36,12 +36,12 @@ if os.path.exists(CONFIG_FILE_PATH):
 for key in config.keys():
     env_value = os.environ.get(key)
     if env_value is not None:
-        # For the PORT, ensure we store an integer.
-        if key == "PORT":
+        # For numeric values like PORT and TUNER_COUNT, store as int.
+        if key in ["PORT", "TUNER_COUNT"]:
             try:
                 config[key] = int(env_value)
             except ValueError:
-                print(f"Invalid PORT value in environment: {env_value}. Using {config[key]} instead.")
+                print(f"Invalid {key} value in environment: {env_value}. Using {config[key]} instead.")
         else:
             config[key] = env_value
 
@@ -52,7 +52,7 @@ try:
 except Exception as e:
     print(f"Error writing config file: {e}")
 
-# Ensure that necessary directories exist.
+# Ensure necessary directories exist.
 os.makedirs(config["LOGOS_DIR"], exist_ok=True)
 os.makedirs(config["CUSTOM_LOGOS_DIR"], exist_ok=True)
 
@@ -65,3 +65,4 @@ MODIFIED_EPG_DIR = config["MODIFIED_EPG_DIR"]
 DB_FILE = config["DB_FILE"]
 LOGOS_DIR = config["LOGOS_DIR"]
 CUSTOM_LOGOS_DIR = config["CUSTOM_LOGOS_DIR"]
+TUNER_COUNT = config["TUNER_COUNT"]

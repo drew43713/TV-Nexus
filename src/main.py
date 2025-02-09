@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from .routes import router as app_router
+from .settings import router as settings_router
 from .database import init_db
 from .m3u import load_m3u_files
 
@@ -11,6 +12,7 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # Include all routes.
 app.include_router(app_router)
+app.include_router(settings_router)
 
 @app.on_event("startup")
 def startup_event():
