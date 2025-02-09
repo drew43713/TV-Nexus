@@ -453,3 +453,46 @@ def get_categories():
         return JSONResponse(categories)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/update_channel_properties")
+def update_channel_properties(
+    channel_id: int = Form(...),
+    new_channel_number: int = Form(...),
+    new_name: str = Form(...),
+    new_category: str = Form(...),
+    new_logo: str = Form(...),
+    new_epg_entry: str = Form(...)
+):
+    try:
+        # If the channel number has changed, perform the swap logic.
+        updated_channel_id = channel_id
+        if channel_id != new_channel_number:
+            swap = swap_channel_ids(channel_id, new_channel_number)
+            update_modified_epg(channel_id, new_channel_number, swap)
+            # Clear any active shared streams for both channel IDs.
+            clear_shared_stream(channel_id)
+            clear_shared_stream(new_channel_number)
+            updated_channel_id = new_channel_number
+
+        # Now update the channel properties (name, category, logo, and EPG entry)
+        conn = sqlite3.connect(DB_FILE)
+        c = conn.cursor()
+        # Verify that the channel exists using the updated channel id.
+        c.execute("SELECT id FROM channels WHERE id = ?", (updated_channel_id,))
+        if not c.fetchone():
+            conn.close()
+            return JSONResponse({"success": False, "error": "Channel not found."})
+        c.execute(
+            "UPDATE channels SET name = ?, group_title = ?, logo_url = ?, tvg_name = ? WHERE id = ?",
+            (new_name, new_category, new_logo, new_epg_entry, updated_channel_id)
+        )
+        conn.commit()
+        conn.close()
+
+        # Update the programme data in the modified EPG file for this channel.
+        from .epg import update_program_data_for_channel
+        update_program_data_for_channel(updated_channel_id)
+
+        return JSONResponse({"success": True})
+    except Exception as e:
+        return JSONResponse({"success": False, "error": str(e)})

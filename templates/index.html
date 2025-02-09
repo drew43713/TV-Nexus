@@ -26,10 +26,15 @@
     tr:nth-child(even) {
       background-color: #f2f2f2;
     }
+    /* Channel logo styling in table with a gray box behind */
     img.channel-logo {
       max-height: 40px;
       width: auto;
       cursor: pointer;
+      background-color: #e0e0e0;
+      padding: 2px;
+      border: 1px solid #ccc;
+      box-shadow: 0px 0px 3px rgba(0,0,0,0.2);
     }
     input.channel-number {
       width: 50px;
@@ -38,9 +43,8 @@
       padding: 5px;
     }
     button.edit-button,
-    button.epg-save-button,
     button.probe-button,
-    button.save-name-button {
+    button.save-all-button {
       padding: 5px 10px;
       cursor: pointer;
     }
@@ -56,6 +60,7 @@
       box-shadow: 0 0 10px rgba(0,0,0,0.5);
       z-index: 1000;
       max-width: 90%;
+      overflow-y: auto;
     }
     .modal-content, .logo-picker-content {
       text-align: center;
@@ -75,9 +80,14 @@
       font-size: 16px;
       margin: 5px 0;
     }
+    /* Modal logo styling with a gray box behind */
     .modal img#modal-logo {
       max-width: 150px;
       cursor: pointer;
+      background-color: #e0e0e0;
+      padding: 5px;
+      border: 1px solid #ccc;
+      box-shadow: 0px 0px 3px rgba(0,0,0,0.2);
     }
     .modal button, .logo-picker-modal button {
       margin-top: 10px;
@@ -140,7 +150,7 @@
       cursor: pointer;
       border: 2px solid transparent;
       box-shadow: 0px 0px 5px rgba(0, 0, 0, 0.3);
-      background-color: #e0e0e0; /* Darker gray background for contrast */
+      background-color: #e0e0e0;
     }
     .logo-picker-modal img.selected {
       border-color: blue;
@@ -154,7 +164,6 @@
     }
   </style>
   <script>
-    // Global configuration variable from your backend.
     const BASE_URL = "{{ BASE_URL }}";
   </script>
 </head>
@@ -178,7 +187,7 @@
           data-name="{{ channel[1] }}" 
           data-logo="{{ channel[4] }}" 
           data-category="{{ channel[5] }}" 
-          data-epg="{{ epg_map[channel[0]|string]['title'] if channel[0]|string in epg_map else 'No Program' }}"
+          data-epg="{{ epg_map[channel[0]|string]['title'] if channel[0]|string in epg_map and epg_map[channel[0]|string] else 'No Program' }}"
           data-epg-entry="{{ epg_entry_map[channel[0]|string] if channel[0]|string in epg_entry_map else 'Unknown' }}"
           data-stream-url="{{ stream_map[channel[0]|string] if channel[0]|string in stream_map else 'N/A' }}">
         <td>
@@ -193,7 +202,7 @@
         </td>
         <td>{{ channel[1] }}</td>
         <td>{{ channel[5] }}</td>
-        <td>{{ epg_map[channel[0]|string]['title'] if channel[0]|string in epg_map else 'No Program' }}</td>
+        <td>{{ epg_map[channel[0]|string]['title'] if channel[0]|string in epg_map and epg_map[channel[0]|string] else 'No Program' }}</td>
         <td>
           <button class="edit-button" onclick="handleEditButtonClick(event, this)">Edit</button>
         </td>
@@ -212,8 +221,10 @@
       <p id="modal-category-text" onclick="editChannelCategory()"></p>
       <!-- Channel logo; clicking opens the logo picker -->
       <img id="modal-logo" src="" alt="Channel Logo" onclick="openLogoPicker()" />
+      <!-- Editable channel number input -->
       <p>
-        <strong>Channel Number:</strong> <span id="modal-channel"></span>
+        <strong>Channel Number:</strong>
+        <input type="number" id="modal-channel-number" value="" style="width:70px;" onkeydown="handleEnter(event, this)" onblur="updateModalChannelNumber(this)">
       </p>
       <p>
         <strong>Current Program:</strong> <span id="modal-epg"></span>
@@ -230,10 +241,12 @@
         <datalist id="epg-list"></datalist>
       </p>
       
-      <button class="epg-save-button" onclick="saveEpgEntry()">Save EPG</button>
+      <!-- (Probe Stream remains available if needed) -->
       <button class="probe-button" onclick="probeStream()">Probe Stream</button>
       <div id="probe-results"></div>
       
+      <!-- Save Changes button that updates all properties including channel number -->
+      <button class="save-all-button" onclick="saveAllChanges()">Save Changes</button>
       <button onclick="closeModal()">Close</button>
     </div>
   </div>
@@ -243,7 +256,6 @@
   <div class="logo-picker-modal" id="logo-picker-modal" style="display:none; position: fixed; top:50%; left:50%; transform: translate(-50%, -50%); background: #fff; padding: 20px; z-index:1200;">
     <div class="logo-picker-content">
       <h3>Select a Logo</h3>
-      <!-- New search input for logos -->
       <input type="text" id="logo-search" placeholder="Search logos by filename..." />
       <div id="logo-picker-container" style="display: flex; flex-wrap: wrap; justify-content: center;"></div>
       <button onclick="closeLogoPicker()">Cancel</button>
@@ -258,10 +270,14 @@
   
   <!-- JavaScript Functions -->
   <script>
+    // Global variables
     let currentChannelId = null;
-    let selectedLogo = ""; // holds the currently selected logo URL
-    let allLogos = []; // stores all logos fetched from /api/logos
-
+    let editedChannelNumber = null;
+    let selectedLogo = "";
+    let allLogos = [];
+    let editedChannelName = "";
+    let editedChannelCategory = "";
+    
     // Called when the "Edit" button is clicked.
     function handleEditButtonClick(event, button) {
       event.stopPropagation();
@@ -275,32 +291,29 @@
       const streamUrl = row.getAttribute('data-stream-url');
       
       currentChannelId = channelId;
-      selectedLogo = currentLogoUrl; // default to current logo
+      editedChannelNumber = channelId;  // initialize with current channel id
+      selectedLogo = currentLogoUrl;
+      editedChannelName = channelName;
+      editedChannelCategory = channelCategory;
       
-      // Set inline-editable channel name.
       const modalTitle = document.getElementById('modal-title');
       modalTitle.innerText = channelName;
       modalTitle.onclick = editChannelName;
       
-      // Set inline-editable category text.
       const modalCategory = document.getElementById('modal-category-text');
       modalCategory.innerText = "Category: " + channelCategory;
       modalCategory.onclick = editChannelCategory;
       
       document.getElementById('modal-logo').src = currentLogoUrl;
-      document.getElementById('modal-channel').innerText = channelId;
+      document.getElementById('modal-channel-number').value = channelId;
       document.getElementById('modal-epg').innerText = epgTitle;
       document.getElementById('modal-stream-url').innerText = streamUrl;
       document.getElementById('modal-stream-url').href = streamUrl;
       
-      // Load available EPG entries.
       loadAvailableEpgEntries(epgEntry);
-      
-      // Clear previous probe results and reset EPG input.
       document.getElementById('probe-results').innerText = "";
       document.getElementById('epg-input').value = "";
       
-      // Show modal and overlay.
       document.getElementById('modal').style.display = 'block';
       document.getElementById('overlay').style.display = 'block';
     }
@@ -317,11 +330,7 @@
       input.style.fontFamily = 'inherit';
       input.style.textAlign = 'center';
       input.onblur = saveChannelNameInline;
-      input.onkeydown = function(e) {
-        if (e.key === 'Enter') {
-          input.blur();
-        }
-      };
+      input.onkeydown = function(e) { if (e.key === 'Enter') input.blur(); };
       modalTitle.parentNode.replaceChild(input, modalTitle);
       input.focus();
       input.select();
@@ -331,46 +340,15 @@
       const input = document.getElementById('modal-channel-name-inline');
       if (!input) return;
       const newName = input.value;
+      editedChannelName = newName;
       const h2 = document.createElement('h2');
       h2.id = 'modal-title';
       h2.innerText = newName;
       h2.onclick = editChannelName;
       input.parentNode.replaceChild(h2, input);
-      
-      if (!currentChannelId) {
-        alert("Channel ID not set.");
-        return;
-      }
-      const formData = new FormData();
-      formData.append("channel_id", currentChannelId);
-      formData.append("new_name", newName);
-      fetch("/update_channel_name", {
-        method: "POST",
-        body: formData
-      })
-      .then(response => response.json())
-      .then(data => {
-        if (data.success) {
-          alert("Channel name updated successfully!");
-          const row = document.querySelector(`tr[data-channel="${currentChannelId}"]`);
-          if (row) {
-            row.setAttribute("data-name", newName);
-            const cells = row.getElementsByTagName("td");
-            if (cells.length >= 3) {
-              cells[2].innerText = newName;
-            }
-          }
-        } else {
-          alert("Failed to update channel name.");
-        }
-      })
-      .catch(error => {
-        alert("Error updating channel name: " + error);
-        console.error("Error updating channel name:", error);
-      });
     }
     
-    // Inline editing for channel category with a datalist.
+    // Inline editing for channel category.
     function editChannelCategory() {
       const modalCategory = document.getElementById('modal-category-text');
       const currentCategory = modalCategory.innerText.replace(/^Category:\s*/, "");
@@ -378,16 +356,12 @@
       input.type = 'text';
       input.id = 'modal-category-inline';
       input.value = currentCategory;
-      input.setAttribute('list', 'category-list'); // attach the datalist
+      input.setAttribute('list', 'category-list');
       input.style.fontSize = 'inherit';
       input.style.fontFamily = 'inherit';
       input.style.textAlign = 'center';
       input.onblur = saveChannelCategoryInline;
-      input.onkeydown = function(e) {
-        if (e.key === 'Enter') {
-          input.blur();
-        }
-      };
+      input.onkeydown = function(e) { if (e.key === 'Enter') input.blur(); };
       modalCategory.parentNode.replaceChild(input, modalCategory);
       input.focus();
       input.select();
@@ -418,60 +392,34 @@
       const input = document.getElementById('modal-category-inline');
       if (!input) return;
       const newCategory = input.value;
+      editedChannelCategory = newCategory;
       const p = document.createElement('p');
       p.id = 'modal-category-text';
       p.innerText = "Category: " + newCategory;
       p.onclick = editChannelCategory;
       input.parentNode.replaceChild(p, input);
-      
-      if (!currentChannelId) {
-        alert("Channel ID not set.");
-        return;
-      }
-      const formData = new FormData();
-      formData.append("channel_id", currentChannelId);
-      formData.append("new_category", newCategory);
-      fetch("/update_channel_category", {
-        method: "POST",
-        body: formData
-      })
-      .then(response => response.json())
-      .then(data => {
-        if (data.success) {
-          alert("Channel category updated successfully!");
-          const row = document.querySelector(`tr[data-channel="${currentChannelId}"]`);
-          if (row) {
-            row.setAttribute("data-category", newCategory);
-            const cells = row.getElementsByTagName("td");
-            if (cells.length >= 4) {
-              cells[3].innerText = newCategory;
-            }
-          }
-        } else {
-          alert("Failed to update channel category.");
-        }
-      })
-      .catch(error => {
-        alert("Error updating channel category: " + error);
-        console.error("Error updating channel category:", error);
-      });
     }
     
-    // Open the logo picker.
+    // Update channel number from modal input.
+    function updateModalChannelNumber(input) {
+      editedChannelNumber = input.value;
+    }
+    
+    // Logo Picker functions.
     function openLogoPicker() {
       fetch('/api/logos')
       .then(response => response.json())
       .then(data => {
-        allLogos = data;  // store all logos globally
-        // Display logos with no filter initially.
+        allLogos = data;
+        document.getElementById("logo-search").value = "";
         displayLogos("");
         document.getElementById('logo-picker-overlay').style.display = 'block';
         document.getElementById('logo-picker-modal').style.display = 'block';
+        document.getElementById('logo-picker-modal').scrollTop = 0;
       })
       .catch(error => console.error("Error fetching logos:", error));
     }
     
-    // Function to display logos based on a filter (matches filename)
     function displayLogos(filterText) {
       const pickerContainer = document.getElementById('logo-picker-container');
       pickerContainer.innerHTML = "";
@@ -481,19 +429,13 @@
         if (filename.includes(lowerFilter)) {
           const logoImg = document.createElement("img");
           logoImg.src = logoUrl;
-          if (logoUrl === selectedLogo) {
-            logoImg.classList.add("selected");
-          }
+          if (logoUrl === selectedLogo) logoImg.classList.add("selected");
           logoImg.onclick = function(e) {
             e.stopPropagation();
             selectedLogo = logoUrl;
             document.getElementById('modal-logo').src = logoUrl;
-            // Remove selected class from others
-            Array.from(pickerContainer.children).forEach(child => {
-              child.classList.remove("selected");
-            });
+            Array.from(pickerContainer.children).forEach(child => child.classList.remove("selected"));
             logoImg.classList.add("selected");
-            saveChannelLogo();
             closeLogoPicker();
           };
           pickerContainer.appendChild(logoImg);
@@ -501,7 +443,6 @@
       });
     }
     
-    // Listen for keyup events on the logo search input.
     document.addEventListener("DOMContentLoaded", function() {
       const logoSearchInput = document.getElementById("logo-search");
       if (logoSearchInput) {
@@ -516,39 +457,6 @@
       document.getElementById('logo-picker-modal').style.display = 'none';
     }
     
-    function saveChannelLogo() {
-      if (!currentChannelId) {
-        alert("Channel ID not set.");
-        return;
-      }
-      const formData = new FormData();
-      formData.append("channel_id", currentChannelId);
-      formData.append("new_logo", selectedLogo);
-      fetch("/update_channel_logo", {
-        method: "POST",
-        body: formData
-      })
-      .then(response => response.json())
-      .then(data => {
-        if (data.success) {
-          const row = document.querySelector(`tr[data-channel="${currentChannelId}"]`);
-          if (row) {
-            row.setAttribute("data-logo", selectedLogo);
-            const imgElem = row.querySelector("img.channel-logo");
-            if (imgElem) {
-              imgElem.src = selectedLogo;
-            }
-          }
-        } else {
-          alert("Failed to update logo.");
-        }
-      })
-      .catch(error => {
-        alert("Error updating logo: " + error);
-        console.error("Error updating logo:", error);
-      });
-    }
-    
     function updateChannelNumber(input) {
       let oldValue = input.getAttribute('data-old-value');
       let newValue = input.value.trim();
@@ -559,16 +467,10 @@
       let formData = new FormData();
       formData.append("current_id", oldValue);
       formData.append("new_id", newValue);
-      fetch("/update_channel_number", {
-        method: "POST",
-        body: formData
-      })
+      fetch("/update_channel_number", { method: "POST", body: formData })
       .then(response => {
-        if (response.redirected) {
-          window.location.href = response.url;
-        } else {
-          return response.text();
-        }
+        if (response.redirected) window.location.href = response.url;
+        else return response.text();
       })
       .catch(error => {
         alert("Error updating channel number: " + error);
@@ -587,60 +489,64 @@
           option.value = epgEntry;
           datalist.appendChild(option);
         });
-        if (defaultEntry) {
-          document.getElementById('epg-input').value = defaultEntry;
-        }
+        if (defaultEntry) document.getElementById('epg-input').value = defaultEntry;
       })
-      .catch(error => {
-        console.error("Error loading EPG entries:", error);
-      });
+      .catch(error => console.error("Error loading EPG entries:", error));
     }
     
-    function saveEpgEntry() {
-      const newEpgEntry = document.getElementById('epg-input').value;
+    // Save all changes: update channel properties (name, category, logo, EPG entry, and channel number)
+    function saveAllChanges() {
       if (!currentChannelId) {
-        alert("Channel ID not set");
+        alert("Channel ID not set.");
         return;
       }
-      document.getElementById('loading').style.display = 'block';
+      const epgEntry = document.getElementById('epg-input').value;
       const formData = new FormData();
       formData.append("channel_id", currentChannelId);
-      formData.append("new_epg_entry", newEpgEntry);
-      fetch("/update_epg_entry", {
+      formData.append("new_channel_number", editedChannelNumber);
+      formData.append("new_name", editedChannelName);
+      formData.append("new_category", editedChannelCategory);
+      formData.append("new_logo", selectedLogo);
+      formData.append("new_epg_entry", epgEntry);
+  
+      fetch("/update_channel_properties", {
         method: "POST",
         body: formData
       })
       .then(response => response.json())
-      .then(result => {
-        if (result.success) {
-          fetch(`/api/current_program?channel_id=${currentChannelId}`)
-          .then(resp => resp.json())
-          .then(data => {
-            const row = document.querySelector(`tr[data-channel="${currentChannelId}"]`);
-            if (row) {
-              row.setAttribute('data-epg-entry', newEpgEntry);
-              const cells = row.getElementsByTagName("td");
-              if (cells.length >= 6) {
-                cells[4].innerText = data.title;
-              }
-            }
-            document.getElementById('loading').style.display = 'none';
-            alert("EPG entry updated successfully.");
-            closeModal();
-          })
-          .catch(error => {
-            document.getElementById('loading').style.display = 'none';
-            console.error("Error fetching updated current program:", error);
-            alert("EPG entry updated, but failed to refresh current program.");
-          });
+      .then(data => {
+        if (data.success) {
+          alert("Channel properties and EPG entry updated successfully!");
+          const row = document.querySelector(`tr[data-channel="${currentChannelId}"]`);
+          if (row) {
+            row.setAttribute("data-name", editedChannelName);
+            row.setAttribute("data-category", editedChannelCategory);
+            row.setAttribute("data-logo", selectedLogo);
+            row.setAttribute("data-epg-entry", epgEntry);
+            const cells = row.getElementsByTagName("td");
+            if (cells.length >= 3) cells[2].innerText = editedChannelName;
+            if (cells.length >= 4) cells[3].innerText = editedChannelCategory;
+            const logoImg = row.querySelector("img.channel-logo");
+            if (logoImg) logoImg.src = selectedLogo;
+            // Refresh the EPG cell by fetching the current program data using the (possibly new) channel number.
+            fetch(`/api/current_program?channel_id=${editedChannelNumber}`)
+              .then(resp => resp.json())
+              .then(epgData => {
+                row.setAttribute("data-epg", epgData.title);
+                if (cells.length >= 5) cells[4].innerText = epgData.title;
+              })
+              .catch(err => {
+                console.error("Error fetching updated current program:", err);
+              });
+          }
+          closeModal();
         } else {
-          document.getElementById('loading').style.display = 'none';
-          alert("Failed to update EPG entry: " + result.error);
+          alert("Failed to update channel properties: " + data.error);
         }
       })
       .catch(error => {
-        document.getElementById('loading').style.display = 'none';
-        alert("Error updating EPG entry: " + error);
+        alert("Error updating channel properties: " + error);
+        console.error("Error:", error);
       });
     }
     
@@ -668,9 +574,7 @@
     }
     
     function handleEnter(event, input) {
-      if (event.key === "Enter") {
-        input.blur();
-      }
+      if (event.key === "Enter") input.blur();
     }
   </script>
   
@@ -679,52 +583,37 @@
     document.addEventListener("DOMContentLoaded", function() {
       const table = document.getElementById("channels-table");
       if (!table) return;
-      
       const headers = table.querySelectorAll("thead th");
       headers.forEach((header, index) => {
         header.style.cursor = "pointer";
-        header.addEventListener("click", () => {
-          sortTableByColumn(table, index);
-        });
+        header.addEventListener("click", () => { sortTableByColumn(table, index); });
       });
       
       function getCellValue(cell) {
         const input = cell.querySelector('input');
-        if (input) {
-          return input.value.trim();
-        } else {
-          return cell.innerText.trim();
-        }
+        return input ? input.value.trim() : cell.innerText.trim();
       }
       
       function sortTableByColumn(table, columnIndex) {
         const tbody = table.querySelector("tbody");
         const rows = Array.from(tbody.querySelectorAll("tr"));
-        
         const header = table.querySelectorAll("thead th")[columnIndex];
         let ascending = header.getAttribute("data-sort-asc") === "true";
         ascending = !ascending;
         header.setAttribute("data-sort-asc", ascending);
-        
         table.querySelectorAll("thead th").forEach((th, idx) => {
-          if (idx !== columnIndex) {
-            th.removeAttribute("data-sort-asc");
-          }
+          if (idx !== columnIndex) th.removeAttribute("data-sort-asc");
         });
-        
         rows.sort((a, b) => {
           let cellA = getCellValue(a.cells[columnIndex]);
           let cellB = getCellValue(b.cells[columnIndex]);
-          
           const numA = parseFloat(cellA.replace(/[^0-9.-]+/g, ""));
           const numB = parseFloat(cellB.replace(/[^0-9.-]+/g, ""));
-          
           if (!isNaN(numA) && !isNaN(numB)) {
             return ascending ? numA - numB : numB - numA;
           }
           return ascending ? cellA.localeCompare(cellB) : cellB.localeCompare(cellA);
         });
-        
         rows.forEach(row => tbody.appendChild(row));
       }
     });

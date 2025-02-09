@@ -126,10 +126,7 @@ def load_m3u_files():
                 tvg_logo = parse_m3u_attribute(line, "tvg-logo")
                 group_title = parse_m3u_attribute(line, "group-title")
                 # Next line is the stream URL.
-                if (idx + 1) < len(lines):
-                    url = lines[idx + 1].strip()
-                else:
-                    url = ""
+                url = lines[idx + 1].strip() if (idx + 1) < len(lines) else ""
 
                 # Use tvg_logo if provided.
                 remote_logo = tvg_logo if tvg_logo else ""
@@ -141,21 +138,17 @@ def load_m3u_files():
                 row = c.fetchone()
                 if row:
                     channel_id, old_url, old_logo = row
-                    tvg_logo_local = ""
-                    # If a cached logo already exists, verify its validity.
-                    if old_logo and old_logo.startswith("/static/logos/"):
-                        filename = old_logo.split("/static/logos/")[-1]
-                        logos_dir = os.path.abspath(LOGOS_DIR)
-                        filepath = os.path.join(logos_dir, filename)
-                        if os.path.exists(filepath) and os.path.getsize(filepath) > 0:
-                            tvg_logo_local = old_logo
-                        else:
-                            # Recache if the file is missing or invalid.
-                            tvg_logo_local = cache_logo(remote_logo, channel_identifier=key)
+
+                    # Compute the default logo based on the current M3U file.
+                    default_logo = cache_logo(remote_logo, channel_identifier=key) if remote_logo else ""
+                    # If the existing logo (old_logo) is not empty and differs from the default,
+                    # assume it was manually changed, so preserve it.
+                    if old_logo and old_logo != default_logo:
+                        tvg_logo_local = old_logo
                     else:
-                        tvg_logo_local = cache_logo(remote_logo, channel_identifier=key)
-                    
-                    # Update the record if the URL or logo has changed.
+                        tvg_logo_local = default_logo
+
+                    # Update the record if the URL has changed.
                     if old_url != url or (old_logo != tvg_logo_local):
                         c.execute("""
                             UPDATE channels 
@@ -179,4 +172,5 @@ def load_m3u_files():
     conn.close()
 
     print("[INFO] Channels updated. Updating modified EPG file...")
+    from .epg import parse_epg_files  # local import to avoid circular dependency
     parse_epg_files()
