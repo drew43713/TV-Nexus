@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Request, Form, HTTPException, File, UploadFile
+from fastapi import APIRouter, Request, Form, HTTPException, UploadFile, File
 from fastapi.responses import HTMLResponse, RedirectResponse
 import os
 import json
@@ -28,7 +28,7 @@ def settings_page(request: Request):
         current_config = {}
     tuner_count = current_config.get("TUNER_COUNT", 1)
     
-    # Read query parameters for confirmation messages.
+    # Get query parameters for confirmation messages.
     updated = request.query_params.get("updated", None)
     upload_success = request.query_params.get("upload_success", None)
     
@@ -43,12 +43,14 @@ def settings_page(request: Request):
 
 @router.post("/update_config")
 def update_config(tuner_count: int = Form(...)):
+    # Load current config.
     try:
         with open(CONFIG_FILE_PATH, "r") as f:
             current_config = json.load(f)
     except Exception:
         raise HTTPException(status_code=500, detail="Failed to load configuration.")
     
+    # Update tuner count.
     current_config["TUNER_COUNT"] = tuner_count
     
     try:
@@ -57,20 +59,20 @@ def update_config(tuner_count: int = Form(...)):
     except Exception:
         raise HTTPException(status_code=500, detail="Failed to save configuration.")
     
+    # Redirect back to /settings?updated=true so the banner is shown initially.
     return RedirectResponse(url="/settings?updated=true", status_code=303)
 
 @router.post("/upload_epg")
 async def upload_epg(file: UploadFile = File(...)):
-    # Validate file extension (allowed: .xml, .xmltv, .gz)
+    # Validate file extension.
     allowed_exts = [".xml", ".xmltv", ".gz"]
     filename = file.filename
     ext = os.path.splitext(filename)[1].lower()
     if ext not in allowed_exts:
         raise HTTPException(status_code=400, detail="Invalid file type. Allowed: xml, xmltv, gz")
     
-    # Determine destination path (overwriting any existing file with the same name)
+    # Save file to EPG_DIR (replace existing file if necessary).
     destination = os.path.join(EPG_DIR, filename)
-    
     try:
         with open(destination, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
@@ -79,7 +81,7 @@ async def upload_epg(file: UploadFile = File(...)):
     finally:
         file.file.close()
     
-    # Reparse the EPG files after upload.
+    # Reparse EPG files.
     try:
         parse_epg_files()
     except Exception as e:

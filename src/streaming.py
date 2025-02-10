@@ -8,7 +8,8 @@ streams_lock = threading.Lock()
 shared_streams = {}
 
 class SharedStream:
-    def __init__(self, ffmpeg_cmd):
+    def __init__(self, channel_id, ffmpeg_cmd):
+        self.channel_id = channel_id
         self.ffmpeg_cmd = ffmpeg_cmd
         self.process = subprocess.Popen(
             ffmpeg_cmd,
@@ -27,7 +28,7 @@ class SharedStream:
         while True:
             chunk = self.process.stdout.read(1024)
             if not chunk:
-                print("No chunk received from FFmpeg; ending broadcast.")
+                print(f"Stream for channel {self.channel_id} ended.")
                 break
             with self.lock:
                 for q in self.subscribers:
@@ -38,7 +39,7 @@ class SharedStream:
                 q.put(None)
         stderr_output = self.process.stderr.read()
         if stderr_output:
-            print("FFmpeg stderr:", stderr_output.decode('utf-8', errors='ignore'))
+            print("FFmpeg stderr:", stderr_output.decode("utf-8", errors="ignore"))
 
     def add_subscriber(self):
         q = queue.Queue()
@@ -57,7 +58,7 @@ class SharedStream:
                     pass
 
 def get_shared_stream(channel_id: int, stream_url: str) -> SharedStream:
-    print(f"Creating shared stream for channel {channel_id} with URL: {stream_url}")
+    # Build your FFmpeg command.
     ffmpeg_cmd = [
         "ffmpeg", "-hide_banner", "-loglevel", "error",
         "-user_agent", "VLC/3.0.20-git LibVLC/3.0.20-git",
@@ -70,7 +71,7 @@ def get_shared_stream(channel_id: int, stream_url: str) -> SharedStream:
     with streams_lock:
         if channel_id in shared_streams and shared_streams[channel_id].is_running:
             return shared_streams[channel_id]
-        shared_streams[channel_id] = SharedStream(ffmpeg_cmd)
+        shared_streams[channel_id] = SharedStream(channel_id, ffmpeg_cmd)
         return shared_streams[channel_id]
 
 def clear_shared_stream(channel_id: int):

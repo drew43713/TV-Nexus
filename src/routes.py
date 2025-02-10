@@ -392,11 +392,11 @@ def probe_stream(channel_id: int = Query(..., description="The channel ID to pro
 @router.get("/api/logos")
 def get_logos():
     """
-    Return a JSON list of available logos (from both cached and custom folders).
-    For custom logos, recursively search all subdirectories.
+    Return a JSON list of available logos from both the static logos folder
+    and the custom logos folder. Custom logos are searched recursively.
     """
     logos = []
-    # List logos from the cached logos directory.
+    # List logos from the static logos directory.
     if os.path.exists(LOGOS_DIR):
         for f in os.listdir(LOGOS_DIR):
             if f.lower().endswith((".jpg", ".jpeg", ".png", ".gif")):
@@ -408,9 +408,9 @@ def get_logos():
                 if f.lower().endswith((".jpg", ".jpeg", ".png", ".gif")):
                     # Compute the path relative to the CUSTOM_LOGOS_DIR.
                     rel_path = os.path.relpath(os.path.join(root, f), CUSTOM_LOGOS_DIR)
-                    # Normalize the path separator to '/' so it works in a URL.
+                    # Normalize Windows path separators to '/'
                     rel_path = rel_path.replace("\\", "/")
-                    logos.append(f"/static/custom_logos/{rel_path}")
+                    logos.append(f"/custom_logos/{rel_path}")
     return JSONResponse(logos)
 
 @router.post("/update_channel_logo")

@@ -280,6 +280,8 @@
         document.getElementById('logo-picker-overlay').style.display = 'block';
         document.getElementById('logo-picker-modal').style.display = 'block';
         document.getElementById('logo-picker-modal').scrollTop = 0;
+        // Auto-focus the search input so you can start typing immediately.
+        document.getElementById("logo-search").focus();
       })
       .catch(error => console.error("Error fetching logos:", error));
     }
@@ -296,6 +298,8 @@
         document.getElementById('logo-picker-overlay').style.display = 'block';
         document.getElementById('logo-picker-modal').style.display = 'block';
         document.getElementById('logo-picker-modal').scrollTop = 0;
+        // Auto-focus the search input so you can start typing immediately.
+        document.getElementById("logo-search").focus();
       })
       .catch(error => console.error("Error fetching logos:", error));
     }

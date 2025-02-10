@@ -13,7 +13,7 @@ DEFAULT_CONFIG = {
     "MODIFIED_EPG_DIR": os.path.join("config", "epg_modified"),
     "DB_FILE": os.path.join("config", "iptv_channels.db"),
     "LOGOS_DIR": os.path.join("static", "logos"),
-    "CUSTOM_LOGOS_DIR": os.path.join("static", "custom_logos"),
+    "CUSTOM_LOGOS_DIR": os.path.join("config", "custom_logos"),
     "TUNER_COUNT": 1    # <-- New tuner count (default 1)
 }
 

@@ -27,9 +27,15 @@
       border-bottom: 1px solid #ddd;
     }
     .section li:last-child { border-bottom: none; }
-    .config-form { text-align: center; margin-top: 10px; }
+    .config-form {
+      text-align: center;
+      margin-top: 10px;
+    }
     .config-form input[type="number"],
-    .config-form input[type="file"] { padding: 5px; margin-right: 10px; }
+    .config-form input[type="file"] {
+      padding: 5px;
+      margin-right: 10px;
+    }
     .config-form button { padding: 5px 10px; cursor: pointer; }
     .confirmation {
       background-color: #dff0d8;
@@ -41,6 +47,24 @@
       text-align: center;
       border-radius: 5px;
     }
+    /* Stream status styling */
+    #stream-status {
+      background-color: #eef;
+      padding: 10px;
+      border: 1px solid #99c;
+      border-radius: 5px;
+      overflow-x: auto;
+    }
+    #stream-status table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    #stream-status th, #stream-status td {
+      border: 1px solid #ccc;
+      padding: 5px;
+      text-align: left;
+    }
+    #stream-status th { background-color: #ddd; }
   </style>
 </head>
 <body>
@@ -71,6 +95,7 @@
     {% endif %}
   </div>
   
+  <!-- Combined EPG Files and Upload Section -->
   <div class="section">
     <h2>EPG Files</h2>
     {% if epg_files %}
@@ -82,6 +107,12 @@
     {% else %}
       <p>No EPG files loaded.</p>
     {% endif %}
+    <div class="config-form">
+      <form action="/upload_epg" method="post" enctype="multipart/form-data">
+        <input type="file" name="file" accept=".xml,.xmltv,.gz" required>
+        <button type="submit">Upload New EPG File</button>
+      </form>
+    </div>
   </div>
   
   <div class="section">
@@ -96,12 +127,9 @@
   </div>
   
   <div class="section">
-    <h2>Upload New EPG File</h2>
-    <div class="config-form">
-      <form action="/upload_epg" method="post" enctype="multipart/form-data">
-        <input type="file" name="file" accept=".xml,.xmltv,.gz" required>
-        <button type="submit">Upload EPG</button>
-      </form>
+    <h2>Stream Status</h2>
+    <div id="stream-status">
+      <div id="stream-status-content">Loading stream status...</div>
     </div>
   </div>
   
@@ -114,13 +142,77 @@
       if (uploadConfirmation) uploadConfirmation.style.display = "none";
     }, 5000);
     
-    // Remove query parameters from the URL if "updated" is present.
+    // Remove query parameters from URL after page load.
     window.addEventListener("DOMContentLoaded", () => {
       const urlParams = new URLSearchParams(window.location.search);
       if(urlParams.has("updated") || urlParams.has("upload_success")){
         window.history.replaceState({}, document.title, "/settings");
       }
     });
+    
+    // Function to update stream status in a user-friendly table.
+    async function updateStreamStatus(){
+      try {
+        const response = await fetch('/api/stream_status');
+        const data = await response.json();
+        const container = document.getElementById("stream-status-content");
+        if (Object.keys(data).length === 0) {
+          container.innerHTML = "<p>No active streams.</p>";
+        } else {
+          let html = "<table><thead><tr>";
+          html += "<th>Channel ID</th>";
+          html += "<th>Channel Name</th>";
+          html += "<th>Current Program</th>";
+          html += "<th>Subscribers</th>";
+          html += "<th>Stream URL</th>";
+          html += "<th>Video Codec</th>";
+          html += "<th>Resolution</th>";
+          html += "<th>Audio Info</th>";
+          html += "</tr></thead><tbody>";
+          for (const channel in data) {
+            const stream = data[channel];
+            const subscribers = stream.subscriber_count;
+            const streamUrl = stream.stream_url;
+            const channelName = stream.channel_name || "N/A";
+            let currentProgram = "N/A";
+            if (stream.current_program && stream.current_program.title) {
+              currentProgram = stream.current_program.title;
+            }
+            let videoCodec = "N/A";
+            let resolution = "N/A";
+            let audioInfo = "N/A";
+            if (stream.probe_info && stream.probe_info.streams) {
+              const streams = stream.probe_info.streams;
+              const videoStream = streams.find(s => s.codec_type === "video");
+              if (videoStream) {
+                videoCodec = videoStream.codec_name;
+                resolution = videoStream.width + "x" + videoStream.height;
+              }
+              const audioStream = streams.find(s => s.codec_type === "audio");
+              if (audioStream) {
+                audioInfo = audioStream.codec_name + " " + audioStream.sample_rate + "Hz " + audioStream.channels + "ch";
+              }
+            }
+            html += `<tr>
+                        <td>${channel}</td>
+                        <td>${channelName}</td>
+                        <td>${currentProgram}</td>
+                        <td>${subscribers}</td>
+                        <td><a href="${streamUrl}" target="_blank">${streamUrl}</a></td>
+                        <td>${videoCodec}</td>
+                        <td>${resolution}</td>
+                        <td>${audioInfo}</td>
+                     </tr>`;
+          }
+          html += "</tbody></table>";
+          container.innerHTML = html;
+        }
+      } catch (error) {
+        document.getElementById("stream-status-content").innerHTML = "<p>Error fetching stream status: " + error + "</p>";
+      }
+    }
+    updateStreamStatus();
+    setInterval(updateStreamStatus, 5000);
   </script>
 </body>
 </html>
