@@ -129,7 +129,7 @@ def tuner_stream(channel_id: int, request: Request):
 
     return StreamingResponse(streamer(), media_type="video/mp2t")
 
-@router.get("/web", response_class=HTMLResponse)
+@router.get("/", response_class=HTMLResponse)
 def web_interface(request: Request):
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()

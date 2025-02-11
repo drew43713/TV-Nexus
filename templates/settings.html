@@ -4,6 +4,26 @@
   <meta charset="UTF-8">
   <title>Settings - IPTV Channel List</title>
   <style>
+    /* Navigation bar (tabs) styling */
+    nav {
+      background: #333;
+      display: flex;
+      justify-content: center;
+      margin-bottom: 20px; /* space below nav */
+    }
+    nav a {
+      color: #fff;
+      padding: 10px 20px;
+      text-decoration: none;
+      font-weight: bold;
+    }
+    nav a:hover {
+      background: #444;
+    }
+    .active-tab {
+      border-bottom: 3px solid #ff0; /* highlight active page */
+    }
+
     body {
       font-family: Arial, sans-serif;
       background-color: #f4f4f9;
@@ -68,6 +88,14 @@
   </style>
 </head>
 <body>
+
+  <!-- TAB NAVIGATION: Channels, Settings (active) -->
+  <nav>
+    <a href="/">Channels</a>
+    <!-- “Settings” tab is active on this page -->
+    <a href="/settings" class="active-tab">Settings</a>
+  </nav>
+
   <h1>Settings</h1>
   
   {% if updated %}
@@ -145,7 +173,7 @@
     // Remove query parameters from URL after page load.
     window.addEventListener("DOMContentLoaded", () => {
       const urlParams = new URLSearchParams(window.location.search);
-      if(urlParams.has("updated") || urlParams.has("upload_success")){
+      if (urlParams.has("updated") || urlParams.has("upload_success")){
         window.history.replaceState({}, document.title, "/settings");
       }
     });

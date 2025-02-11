@@ -4,12 +4,64 @@ import html
 import sqlite3
 import xml.etree.ElementTree as ET
 from datetime import datetime
-
+import re
 from .config import EPG_DIR, MODIFIED_EPG_DIR, DB_FILE, HOST_IP, PORT
 from .database import swap_channel_ids  # if needed in this module, else remove
 
 # ====================================================
-# 1) Parse raw EPG files into 'raw_epg_*' tables
+# 1) Helper to parse/normalize XMLTV date/time
+# ====================================================
+def parse_xmltv_datetime(dt_str):
+    """
+    Parse an XMLTV datetime string like '20230201130000 +0100'
+    or '20230201130000' or '20230201130000 -0500', etc.
+    Return a UTC datetime string 'YYYYmmddHHMMSS +0000'.
+    If the format is unrecognized, returns '19700101000000 +0000'.
+    """
+    # Example valid strings:
+    #   20230201130000 +0100
+    #   20230201130000-0500
+    #   20230201130000
+    # We'll extract the 'YYYYmmddHHMMSS' plus optional offset '+/-hhmm'
+    match = re.match(r'^(\d{14})(?:\s*([+-]\d{4}))?$', dt_str.replace('-', ' -').replace('+', ' +'))
+    # The above replace() calls ensure there's at least a space before +/- if missing:
+    #   "20230201130000-0500" -> "20230201130000 -0500"
+    # This helps with the regex. If your EPG always has a space, you can remove those replaces.
+
+    if not match:
+        # Return a safe fallback if parsing fails
+        return "19700101000000 +0000"
+
+    dt_main, offset_str = match.groups()  # offset_str could be '+0100', '-0500', or None
+
+    # Parse the main YYYYmmddHHMMSS into a naive datetime
+    try:
+        naive_dt = datetime.strptime(dt_main, "%Y%m%d%H%M%S")
+    except ValueError:
+        return "19700101000000 +0000"
+
+    if offset_str:
+        # offset_str is something like '+0100' or '-0530'
+        sign = 1 if offset_str.startswith('+') else -1
+        hours = int(offset_str[1:3])
+        minutes = int(offset_str[3:5])
+        offset_delta = sign * (hours * 60 + minutes)
+
+        # Convert that offset to a total number of minutes
+        # Then apply that offset to naive_dt to shift it to UTC
+        # If offset is +0100, that means naive_dt is local time 1 hour ahead of UTC,
+        # so we subtract 1 hour to get the UTC time.
+        from datetime import timedelta
+        utc_dt = naive_dt - timedelta(minutes=offset_delta)
+    else:
+        # No offset means we treat dt_main as already UTC.
+        utc_dt = naive_dt
+
+    return utc_dt.strftime("%Y%m%d%H%M%S") + " +0000"
+
+
+# ====================================================
+# 2) Parse raw EPG files into 'raw_epg_*' tables
 # ====================================================
 def parse_raw_epg_files():
     """
@@ -66,8 +118,14 @@ def parse_raw_epg_files():
             for prog_el in root.findall("programme"):
                 raw_prog_channel = prog_el.get("channel", "").strip()
                 raw_prog_channel = html.unescape(raw_prog_channel)
-                start_time = prog_el.get("start", "").strip()
-                stop_time = prog_el.get("stop", "").strip()
+
+                # Original times from EPG
+                raw_start_time = prog_el.get("start", "").strip()
+                raw_stop_time = prog_el.get("stop", "").strip()
+
+                # Convert them to UTC format
+                start_time = parse_xmltv_datetime(raw_start_time)
+                stop_time = parse_xmltv_datetime(raw_stop_time)
 
                 title_el = prog_el.find("title")
                 title_text = title_el.text.strip() if (title_el is not None and title_el.text) else ""
@@ -89,7 +147,7 @@ def parse_raw_epg_files():
 
 
 # ====================================================
-# 2) Build combined EPG from raw data (full rebuild)
+# 3) Build combined EPG from raw data (full rebuild)
 # ====================================================
 def build_combined_epg():
     """
@@ -201,7 +259,7 @@ def build_combined_epg():
 
 
 # ====================================================
-# 3) Update program data for a single channel
+# 4) Update program data for a single channel
 #    (No big file re-parse)
 # ====================================================
 def update_program_data_for_channel(channel_id: int):

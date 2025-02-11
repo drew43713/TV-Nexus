@@ -5,11 +5,33 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>{{ BASE_URL }} - IPTV Channel List</title>
   <style>
+    /* Navigation bar (tabs) styling */
+    nav {
+      background: #333;
+      display: flex;
+      justify-content: center;
+      margin-bottom: 20px; /* space below nav */
+    }
+    nav a {
+      color: #fff;
+      padding: 10px 20px;
+      text-decoration: none;
+      font-weight: bold;
+    }
+    nav a:hover {
+      background: #444;
+    }
+    .active-tab {
+      border-bottom: 3px solid #ff0; /* highlight active page */
+    }
+
     /* Global styles */
     body {
       font-family: Arial, sans-serif;
       background-color: #f4f4f9;
       color: #333;
+      margin: 0;
+      padding: 20px;
     }
     table {
       width: 100%;
@@ -174,7 +196,16 @@
   </script>
 </head>
 <body>
+
+  <!-- TAB NAVIGATION: Channels (active), Settings -->
+  <nav>
+    <!-- “Channels” tab is active on this page -->
+    <a href="/" class="active-tab">Channels</a>
+    <a href="/settings">Settings</a>
+  </nav>
+
   <h1>IPTV Channel List</h1>
+  
   <!-- Channel List Table -->
   <table id="channels-table">
     <thead>
