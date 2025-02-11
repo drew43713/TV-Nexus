@@ -251,31 +251,44 @@ def update_channel_number(current_id: int = Form(...), new_id: int = Form(...)):
     return RedirectResponse(url="/", status_code=303)
 
 
+import sqlite3
+from fastapi import APIRouter, Query
+from fastapi.responses import JSONResponse
+
+from .config import DB_FILE
+
+router = APIRouter()
+
 @router.get("/api/epg_entries")
 def get_epg_entries(search: str = Query("", min_length=0)):
     """
-    Return a list of EPG channel names from the `epg_channels` table.
-    If ?search= is provided, do a LIKE filter. No limit.
+    Return a list of EPG channel names from the `raw_epg_channels` table.
+    If ?search= is provided, do a LIKE filter. No limit is applied.
     """
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
 
     if search:
         c.execute("""
-            SELECT name
-              FROM epg_channels
-             WHERE LOWER(name) LIKE LOWER(?)
-             ORDER BY name
-        """, (f"%{search}%",))
+            SELECT DISTINCT display_name
+              FROM raw_epg_channels
+             WHERE LOWER(display_name) LIKE LOWER(?)
+             ORDER BY display_name
+        """, (f"%{search.lower()}%",))
     else:
-        c.execute("SELECT name FROM epg_channels ORDER BY name")
+        c.execute("""
+            SELECT DISTINCT display_name
+              FROM raw_epg_channels
+             ORDER BY display_name
+        """)
 
     rows = c.fetchall()
     conn.close()
 
-    results = [row[0] for row in rows]
-    return JSONResponse(results)
+    # Convert the rows into a list of strings (filtering out any null/empty display_name if desired)
+    results = [row[0] for row in rows if row[0]]
 
+    return JSONResponse(results)
 
 @router.post("/update_epg_entry")
 def update_epg_entry(channel_id: int = Form(...), new_epg_entry: str = Form(...)):
