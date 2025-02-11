@@ -255,21 +255,24 @@ def update_channel_number(current_id: int = Form(...), new_id: int = Form(...)):
 def get_epg_entries(search: str = Query("", min_length=0)):
     """
     Return a list of EPG channel names from the `epg_channels` table.
-    If ?search= is provided, do a LIKE filter. Limit result to 100.
+    If ?search= is provided, do a LIKE filter. No limit.
     """
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
+
     if search:
         c.execute("""
-            SELECT name FROM epg_channels
-            WHERE LOWER(name) LIKE LOWER(?)
-            ORDER BY name
-            LIMIT 100
+            SELECT name
+              FROM epg_channels
+             WHERE LOWER(name) LIKE LOWER(?)
+             ORDER BY name
         """, (f"%{search}%",))
     else:
-        c.execute("SELECT name FROM epg_channels ORDER BY name LIMIT 100")
+        c.execute("SELECT name FROM epg_channels ORDER BY name")
+
     rows = c.fetchall()
     conn.close()
+
     results = [row[0] for row in rows]
     return JSONResponse(results)
 
