@@ -5,7 +5,7 @@ import hashlib
 import requests
 import re
 from .config import M3U_DIR, DB_FILE, LOGOS_DIR
-from .epg import parse_epg_files
+from .epg import parse_raw_epg_files, build_combined_epg
 
 
 def cache_logo(logo_url: str, channel_identifier: str = None) -> str:
@@ -163,5 +163,5 @@ def load_m3u_files():
     conn.close()
 
     print("[INFO] Channels updated. Updating modified EPG file...")
-    from .epg import parse_epg_files  # local import to avoid circular dependency
-    parse_epg_files()
+    parse_raw_epg_files()
+    build_combined_epg()

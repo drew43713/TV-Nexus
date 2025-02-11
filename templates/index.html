@@ -22,6 +22,7 @@
     }
     th {
       background-color: #f8f9fa;
+      cursor: pointer; /* so user sees they can click to sort */
     }
     tr:nth-child(even) {
       background-color: #f2f2f2;
@@ -49,7 +50,8 @@
       cursor: pointer;
     }
     /* Modal and overlay styles */
-    .modal, .logo-picker-modal {
+    .modal,
+    .logo-picker-modal {
       display: none;
       position: fixed;
       top: 50%;
@@ -62,10 +64,12 @@
       max-width: 90%;
       overflow-y: auto;
     }
-    .modal-content, .logo-picker-content {
+    .modal-content,
+    .logo-picker-content {
       text-align: center;
     }
-    .modal img, .logo-picker-modal img {
+    .modal img,
+    .logo-picker-modal img {
       display: block;
       margin: auto;
     }
@@ -89,11 +93,13 @@
       border: 1px solid #ccc;
       box-shadow: 0px 0px 3px rgba(0,0,0,0.2);
     }
-    .modal button, .logo-picker-modal button {
+    .modal button,
+    .logo-picker-modal button {
       margin-top: 10px;
       padding: 5px 10px;
     }
-    .overlay, .logo-picker-overlay {
+    .overlay,
+    .logo-picker-overlay {
       display: none;
       position: fixed;
       top: 0;
@@ -365,6 +371,7 @@
           displayLogos(this.value);
         });
       }
+      initEPGTypeAhead(); // <-- Initialize typeahead for the EPG input
     });
     
     function closeLogoPicker() {
@@ -402,10 +409,11 @@
       document.getElementById('modal-stream-url').innerText = streamUrl;
       document.getElementById('modal-stream-url').href = streamUrl;
       
-      loadAvailableEpgEntries(epgEntry);
+      // Set the initial value for EPG input (if there's an existing mapping)
+      document.getElementById('epg-input').value = epgEntry || "";
       document.getElementById('probe-results').innerText = "";
-      document.getElementById('epg-input').value = "";
-      
+
+      // Show the modal
       document.getElementById('modal').style.display = 'block';
       document.getElementById('overlay').style.display = 'block';
     }
@@ -491,7 +499,7 @@
     }
     
     function updateModalChannelNumber(input) {
-      // No action required here as the value is directly read during save.
+      // No specific action needed here; the final save is done by saveAllChanges().
     }
     
     function updateChannelNumber(input) {
@@ -506,29 +514,16 @@
       formData.append("new_id", newValue);
       fetch("/update_channel_number", { method: "POST", body: formData })
       .then(response => {
-        if (response.redirected) window.location.href = response.url;
-        else return response.text();
+        if (response.redirected) {
+          window.location.href = response.url;
+        } else {
+          return response.text();
+        }
       })
       .catch(error => {
         alert("Error updating channel number: " + error);
         input.value = oldValue;
       });
-    }
-    
-    function loadAvailableEpgEntries(defaultEntry) {
-      fetch('/api/epg_entries')
-      .then(response => response.json())
-      .then(data => {
-        const datalist = document.getElementById('epg-list');
-        datalist.innerHTML = "";
-        data.forEach(epgEntry => {
-          const option = document.createElement('option');
-          option.value = epgEntry;
-          datalist.appendChild(option);
-        });
-        if (defaultEntry) document.getElementById('epg-input').value = defaultEntry;
-      })
-      .catch(error => console.error("Error loading EPG entries:", error));
     }
     
     function saveAllChanges() {
@@ -591,7 +586,48 @@
     }
     
     function handleEnter(event, input) {
-      if (event.key === "Enter") input.blur();
+      if (event.key === "Enter") {
+        input.blur();
+      }
+    }
+
+    // ========== Typeahead Logic for EPG Input ==========
+    function initEPGTypeAhead() {
+      const epgInput = document.getElementById('epg-input');
+      const dataList = document.getElementById('epg-list');
+      if (!epgInput || !dataList) return;
+
+      // Listen for typing in #epg-input
+      epgInput.addEventListener('input', function() {
+        // Clear old options
+        dataList.innerHTML = "";
+
+        const searchTerm = epgInput.value.trim();
+        // Only search if user has typed >= 2 chars
+        if (searchTerm.length < 2) {
+          return;
+        }
+
+        // Call the endpoint with ?search=
+        fetch(`/api/epg_entries?search=${encodeURIComponent(searchTerm)}`)
+          .then(response => response.json())
+          .then(entries => {
+            // Clear existing options
+            dataList.innerHTML = "";
+            entries.forEach(name => {
+              const option = document.createElement('option');
+              option.value = name;
+              dataList.appendChild(option);
+            });
+          })
+          .catch(err => console.error("Error fetching EPG entries:", err));
+      });
+
+      // When a user actually picks something from the datalist,
+      // clear out the suggestions so it doesn’t “pop” again:
+      epgInput.addEventListener('change', () => {
+        dataList.innerHTML = "";
+      });
     }
   </script>
   
@@ -600,9 +636,12 @@
       const table = document.getElementById("channels-table");
       if (!table) return;
       const headers = table.querySelectorAll("thead th");
+
+      // Make the columns clickable to sort
       headers.forEach((header, index) => {
-        header.style.cursor = "pointer";
-        header.addEventListener("click", () => { sortTableByColumn(table, index); });
+        header.addEventListener("click", () => {
+          sortTableByColumn(table, index);
+        });
       });
       
       function getCellValue(cell) {
@@ -617,9 +656,12 @@
         let ascending = header.getAttribute("data-sort-asc") === "true";
         ascending = !ascending;
         header.setAttribute("data-sort-asc", ascending);
+
+        // Clear sort state from other columns
         table.querySelectorAll("thead th").forEach((th, idx) => {
           if (idx !== columnIndex) th.removeAttribute("data-sort-asc");
         });
+
         rows.sort((a, b) => {
           let cellA = getCellValue(a.cells[columnIndex]);
           let cellB = getCellValue(b.cells[columnIndex]);

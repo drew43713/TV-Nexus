@@ -4,7 +4,7 @@ import os
 import json
 import shutil
 from .config import CONFIG_FILE_PATH, EPG_DIR
-from .epg import parse_epg_files
+from .epg import parse_raw_epg_files, build_combined_epg
 
 router = APIRouter()
 from fastapi.templating import Jinja2Templates
@@ -83,7 +83,8 @@ async def upload_epg(file: UploadFile = File(...)):
     
     # Reparse EPG files.
     try:
-        parse_epg_files()
+        parse_raw_epg_files()
+        build_combined_epg()
     except Exception as e:
         raise HTTPException(status_code=500, detail="Error re-parsing EPG files: " + str(e))
     

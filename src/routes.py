@@ -224,70 +224,28 @@ def update_channel_number(current_id: int = Form(...), new_id: int = Form(...)):
     return RedirectResponse(url="/web", status_code=303)
 
 @router.get("/api/epg_entries")
-def get_epg_entries():
+def get_epg_entries(search: str = Query("", min_length=0)):
     """
-    Return a JSON list of available EPG entries in alphabetical order.
-    This version scans only the raw EPG files and includes only channels
-    that have at least one associated programme.
-    Results are cached to improve efficiency.
+    Return a list of EPG channel names from the `epg_channels` table.
+    If ?search= is provided, do a LIKE filter.
+    Limit the result to 100 for performance.
     """
-    global cached_epg_entries, epg_entries_last_updated
-    current_time = time.time()
-    # Return cached result if within the cache duration.
-    if cached_epg_entries is not None and (current_time - epg_entries_last_updated) < CACHE_DURATION_SECONDS:
-        return JSONResponse(sorted(list(cached_epg_entries)))
-    
-    epg_entries = set()
-    
-    def process_epg_root(root):
-        """
-        Process an XML root from an EPG file. Build a mapping of channel IDs
-        to display names and record those channel IDs that have at least one programme.
-        Only channels with programmes are added to the global epg_entries set.
-        """
-        channels_map = {}
-        # Build a mapping from channel id to display name.
-        for ch in root.findall("channel"):
-            disp_el = ch.find("display-name")
-            if disp_el is not None and disp_el.text:
-                channels_map[ch.get("id")] = disp_el.text.strip()
-        channels_with_programmes = set()
-        # Collect channel ids that appear in any programme element.
-        for prog in root.findall("programme"):
-            chan = prog.get("channel")
-            if chan:
-                channels_with_programmes.add(chan)
-        # Add the display name only if there is at least one programme for the channel.
-        for cid, dname in channels_map.items():
-            if cid in channels_with_programmes:
-                epg_entries.add(dname)
-    
-    # Iterate over all raw EPG files.
-    for filename in os.listdir(EPG_DIR):
-        if filename.lower().endswith((".xml", ".xmltv", ".gz")):
-            file_path = os.path.join(EPG_DIR, filename)
-            try:
-                with open(file_path, "rb") as f_obj:
-                    # Read first two bytes to check for gzip signature.
-                    magic = f_obj.read(2)
-                    f_obj.seek(0)
-                    if magic == b'\x1f\x8b':
-                        # Process gzipped file.
-                        with gzip.open(f_obj, "rb") as gz_obj:
-                            decompressed_data = gz_obj.read()
-                        root = ET.fromstring(decompressed_data)
-                    else:
-                        # Process a normal XML file.
-                        tree = ET.parse(f_obj)
-                        root = tree.getroot()
-                process_epg_root(root)
-            except Exception as e:
-                print(f"Error processing raw EPG file {file_path}: {e}")
-    
-    # Cache and return the sorted list of entries.
-    cached_epg_entries = epg_entries
-    epg_entries_last_updated = current_time
-    return JSONResponse(sorted(list(epg_entries)))
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    if search:
+        # Case-insensitive search via LOWER() if needed
+        c.execute("""
+            SELECT name FROM epg_channels
+            WHERE LOWER(name) LIKE LOWER(?) 
+            ORDER BY name
+            LIMIT 100
+        """, (f"%{search}%",))
+    else:
+        c.execute("SELECT name FROM epg_channels ORDER BY name LIMIT 100")
+    rows = c.fetchall()
+    conn.close()
+    results = [row[0] for row in rows]
+    return JSONResponse(results)
 
 @router.post("/update_epg_entry")
 def update_epg_entry(channel_id: int = Form(...), new_epg_entry: str = Form(...)):
