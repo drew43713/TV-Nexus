@@ -5,7 +5,9 @@ import sqlite3
 import xml.etree.ElementTree as ET
 from datetime import datetime
 import re
-from .config import EPG_DIR, MODIFIED_EPG_DIR, DB_FILE, HOST_IP, PORT
+
+# Import BASE_URL (which your config builds with DOMAIN_NAME if available)
+from .config import EPG_DIR, MODIFIED_EPG_DIR, DB_FILE, BASE_URL
 from .database import swap_channel_ids  # if needed in this module, else remove
 
 # ====================================================
@@ -18,40 +20,23 @@ def parse_xmltv_datetime(dt_str):
     Return a UTC datetime string 'YYYYmmddHHMMSS +0000'.
     If the format is unrecognized, returns '19700101000000 +0000'.
     """
-    # Example valid strings:
-    #   20230201130000 +0100
-    #   20230201130000-0500
-    #   20230201130000
-    # We'll extract the 'YYYYmmddHHMMSS' plus optional offset '+/-hhmm'
     match = re.match(r'^(\d{14})(?:\s*([+-]\d{4}))?$', dt_str.replace('-', ' -').replace('+', ' +'))
-    # The above replace() calls ensure there's at least a space before +/- if missing:
-    #   "20230201130000-0500" -> "20230201130000 -0500"
-    # This helps with the regex. If your EPG always has a space, you can remove those replaces.
-
     if not match:
-        # Return a safe fallback if parsing fails
         return "19700101000000 +0000"
 
-    dt_main, offset_str = match.groups()  # offset_str could be '+0100', '-0500', or None
+    dt_main, offset_str = match.groups()
 
-    # Parse the main YYYYmmddHHMMSS into a naive datetime
+    from datetime import timedelta
     try:
         naive_dt = datetime.strptime(dt_main, "%Y%m%d%H%M%S")
     except ValueError:
         return "19700101000000 +0000"
 
     if offset_str:
-        # offset_str is something like '+0100' or '-0530'
         sign = 1 if offset_str.startswith('+') else -1
         hours = int(offset_str[1:3])
         minutes = int(offset_str[3:5])
         offset_delta = sign * (hours * 60 + minutes)
-
-        # Convert that offset to a total number of minutes
-        # Then apply that offset to naive_dt to shift it to UTC
-        # If offset is +0100, that means naive_dt is local time 1 hour ahead of UTC,
-        # so we subtract 1 hour to get the UTC time.
-        from datetime import timedelta
         utc_dt = naive_dt - timedelta(minutes=offset_delta)
     else:
         # No offset means we treat dt_main as already UTC.
@@ -101,8 +86,7 @@ def parse_raw_epg_files():
 
             # -- Read <channel> elements
             for channel_el in root.findall("channel"):
-                raw_id = channel_el.get("id", "").strip()
-                raw_id = html.unescape(raw_id)
+                raw_id = html.unescape(channel_el.get("id", "").strip())
 
                 disp_name_el = channel_el.find("display-name")
                 disp_name = ""
@@ -116,14 +100,11 @@ def parse_raw_epg_files():
 
             # -- Read <programme> elements
             for prog_el in root.findall("programme"):
-                raw_prog_channel = prog_el.get("channel", "").strip()
-                raw_prog_channel = html.unescape(raw_prog_channel)
+                raw_prog_channel = html.unescape(prog_el.get("channel", "").strip())
 
-                # Original times from EPG
                 raw_start_time = prog_el.get("start", "").strip()
                 raw_stop_time = prog_el.get("stop", "").strip()
 
-                # Convert them to UTC format
                 start_time = parse_xmltv_datetime(raw_start_time)
                 stop_time = parse_xmltv_datetime(raw_stop_time)
 
@@ -185,10 +166,9 @@ def build_combined_epg():
         channel_el.append(disp_el)
 
         if db_logo:
-            # If logo is relative, build full URL
+            # If logo is relative, build full URL from BASE_URL
             if db_logo.startswith("/"):
-                base_url = f"http://{HOST_IP}:{PORT}"
-                full_logo_url = f"{base_url}{db_logo}"
+                full_logo_url = f"{BASE_URL}{db_logo}"
             else:
                 full_logo_url = db_logo
             icon_el = ET.Element("icon", src=full_logo_url)
@@ -202,7 +182,6 @@ def build_combined_epg():
         # Find matching raw channels
         raw_ids = []
         if db_tvg_name:
-            # Match by raw_id or display_name
             c.execute("""
                 SELECT DISTINCT raw_id
                   FROM raw_epg_channels
@@ -211,7 +190,6 @@ def build_combined_epg():
             """, (db_tvg_name, db_tvg_name))
             raw_ids = [r[0] for r in c.fetchall()]
         else:
-            # fallback: match by db_name
             c.execute("""
                 SELECT DISTINCT raw_id
                   FROM raw_epg_channels
@@ -269,7 +247,6 @@ def update_program_data_for_channel(channel_id: int):
     3) Find matching raw EPG data from 'raw_epg_*' tables for that tvg_name or name.
     4) Insert it into epg_programs & EPG.xml (only for this channel).
     """
-    # 1) Get tvg_name
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     c.execute("SELECT tvg_name, name, logo_url FROM channels WHERE id = ?", (channel_id,))
@@ -284,11 +261,9 @@ def update_program_data_for_channel(channel_id: int):
     db_tvg_name = db_tvg_name or ""
     db_name = db_name or ""
 
-    # 2) Remove old programme data from epg_programs & EPG.xml
     _remove_programs_from_db(channel_id)
     _remove_programs_from_xml(channel_id)
 
-    # 3) Find matching raw_id
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
 
@@ -302,7 +277,6 @@ def update_program_data_for_channel(channel_id: int):
         """, (db_tvg_name, db_tvg_name))
         raw_ids = [r[0] for r in c.fetchall()]
     else:
-        # fallback: match by channel name
         c.execute("""
             SELECT DISTINCT raw_id
               FROM raw_epg_channels
@@ -310,7 +284,6 @@ def update_program_data_for_channel(channel_id: int):
         """, (db_name,))
         raw_ids = [r[0] for r in c.fetchall()]
 
-    # Load existing EPG.xml
     combined_epg_file = os.path.join(MODIFIED_EPG_DIR, "EPG.xml")
     if not os.path.exists(combined_epg_file):
         print("[WARN] EPG.xml not found; you may need to build_combined_epg first.")
@@ -325,7 +298,7 @@ def update_program_data_for_channel(channel_id: int):
         conn.close()
         return
 
-    # Ensure <channel> node is present (optional)
+    # Ensure <channel> node is present
     channel_el = None
     for ch_el in root.findall("channel"):
         if ch_el.get("id") == str(channel_id):
@@ -337,14 +310,12 @@ def update_program_data_for_channel(channel_id: int):
         disp_el.text = db_name
         if db_logo:
             if db_logo.startswith("/"):
-                base_url = f"http://{HOST_IP}:{PORT}"
-                full_logo_url = f"{base_url}{db_logo}"
+                full_logo_url = f"{BASE_URL}{db_logo}"
             else:
                 full_logo_url = db_logo
             ET.SubElement(channel_el, "icon", {"src": full_logo_url})
         root.append(channel_el)
 
-    # Insert new programmes
     for rid in raw_ids:
         c.execute("""
             SELECT start, stop, title, description
@@ -353,13 +324,11 @@ def update_program_data_for_channel(channel_id: int):
         """, (rid,))
         raw_progs = c.fetchall()
         for (start_t, stop_t, title_txt, desc_txt) in raw_progs:
-            # Insert into epg_programs
             c.execute("""
                 INSERT INTO epg_programs (channel_tvg_name, start, stop, title, description)
                 VALUES (?, ?, ?, ?, ?)
             """, (str(channel_id), start_t, stop_t, title_txt, desc_txt))
 
-            # Add <programme> to EPG.xml
             prog_el = ET.Element("programme", {
                 "channel": str(channel_id),
                 "start": start_t,
@@ -374,15 +343,11 @@ def update_program_data_for_channel(channel_id: int):
     conn.commit()
     conn.close()
 
-    # Save updated EPG.xml
     tree.write(combined_epg_file, encoding="utf-8", xml_declaration=True)
     print(f"[INFO] Updated EPG for channel {channel_id} in {combined_epg_file}")
 
 
 def _remove_programs_from_db(channel_id: int):
-    """
-    Delete old programme rows in epg_programs for this channel.
-    """
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     c.execute("DELETE FROM epg_programs WHERE channel_tvg_name = ?", (str(channel_id),))
@@ -391,12 +356,9 @@ def _remove_programs_from_db(channel_id: int):
 
 
 def _remove_programs_from_xml(channel_id: int):
-    """
-    Remove old <programme> elements for this channel in EPG.xml.
-    """
     combined_epg_file = os.path.join(MODIFIED_EPG_DIR, "EPG.xml")
     if not os.path.exists(combined_epg_file):
-        return  # No file yet—nothing to remove.
+        return
 
     try:
         tree = ET.parse(combined_epg_file)
@@ -414,7 +376,7 @@ def _remove_programs_from_xml(channel_id: int):
 
 
 # ====================================================
-# 4) Update channel logos or metadata
+# 5) Update channel logos or metadata
 # ====================================================
 def update_channel_logo_in_epg(channel_id: int, new_logo: str):
     """
@@ -433,8 +395,7 @@ def update_channel_logo_in_epg(channel_id: int, new_logo: str):
         for channel_el in root.findall("channel"):
             if channel_el.get("id") == str(channel_id):
                 if new_logo.startswith("/"):
-                    base_url = f"http://{HOST_IP}:{PORT}"
-                    full_logo_url = f"{base_url}{new_logo}"
+                    full_logo_url = f"{BASE_URL}{new_logo}"
                 else:
                     full_logo_url = new_logo
 
@@ -479,8 +440,7 @@ def update_channel_metadata_in_epg(channel_id: int, new_name: str, new_logo: str
 
                 # icon
                 if new_logo.startswith("/"):
-                    base_url = f"http://{HOST_IP}:{PORT}"
-                    full_logo_url = f"{base_url}{new_logo}"
+                    full_logo_url = f"{BASE_URL}{new_logo}"
                 else:
                     full_logo_url = new_logo
 

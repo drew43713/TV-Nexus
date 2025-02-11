@@ -14,7 +14,9 @@ DEFAULT_CONFIG = {
     "DB_FILE": os.path.join("config", "iptv_channels.db"),
     "LOGOS_DIR": os.path.join("static", "logos"),
     "CUSTOM_LOGOS_DIR": os.path.join("config", "custom_logos"),
-    "TUNER_COUNT": 1    # <-- New tuner count (default 1)
+    "TUNER_COUNT": 1,
+    # New optional variable:
+    "DOMAIN_NAME": ""   # e.g. "mydomain.com"
 }
 
 # Ensure the config directory exists.
@@ -66,6 +68,7 @@ DB_FILE = config["DB_FILE"]
 LOGOS_DIR = config["LOGOS_DIR"]
 CUSTOM_LOGOS_DIR = config["CUSTOM_LOGOS_DIR"]
 TUNER_COUNT = config["TUNER_COUNT"]
+DOMAIN_NAME = config["DOMAIN_NAME"]
 
 def load_config():
     try:
@@ -74,3 +77,11 @@ def load_config():
     except Exception as e:
         print("Error loading config:", e)
         return DEFAULT_CONFIG.copy()
+
+# Build the BASE_URL once:
+# If DOMAIN_NAME is set (non-empty), use https://DOMAIN_NAME
+# Otherwise use http://HOST_IP:PORT
+if DOMAIN_NAME:
+    BASE_URL = f"https://{DOMAIN_NAME}"
+else:
+    BASE_URL = f"http://{HOST_IP}:{PORT}"
