@@ -250,15 +250,6 @@ def update_channel_number(current_id: int = Form(...), new_id: int = Form(...)):
     clear_shared_stream(new_id)
     return RedirectResponse(url="/", status_code=303)
 
-
-import sqlite3
-from fastapi import APIRouter, Query
-from fastapi.responses import JSONResponse
-
-from .config import DB_FILE
-
-router = APIRouter()
-
 @router.get("/api/epg_entries")
 def get_epg_entries(search: str = Query("", min_length=0)):
     """
