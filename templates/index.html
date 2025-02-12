@@ -10,7 +10,7 @@
       background: #333;
       display: flex;
       justify-content: center;
-      margin-bottom: 20px; /* space below nav */
+      margin-bottom: 20px;
     }
     nav a {
       color: #fff;
@@ -22,9 +22,8 @@
       background: #444;
     }
     .active-tab {
-      border-bottom: 3px solid #ff0; /* highlight active page */
+      border-bottom: 3px solid #ff0;
     }
-
     /* Global styles */
     body {
       font-family: Arial, sans-serif;
@@ -32,6 +31,14 @@
       color: #333;
       margin: 0;
       padding: 20px;
+    }
+    /* Search input styling */
+    #search-input {
+      width: 100%;
+      padding: 10px;
+      margin-bottom: 20px;
+      border: 1px solid #ccc;
+      font-size: 16px;
     }
     table {
       width: 100%;
@@ -44,7 +51,7 @@
     }
     th {
       background-color: #f8f9fa;
-      cursor: pointer; /* so user sees they can click to sort */
+      cursor: pointer;
     }
     tr:nth-child(even) {
       background-color: #f2f2f2;
@@ -95,18 +102,15 @@
       display: block;
       margin: auto;
     }
-    /* The modal header (channel name) is inline-editable */
     .modal h2 {
       cursor: pointer;
       margin: 0 0 10px 0;
     }
-    /* Category text styling */
     .modal p#modal-category-text {
       cursor: pointer;
       font-size: 16px;
       margin: 5px 0;
     }
-    /* Modal logo styling with a gray box behind */
     .modal img#modal-logo {
       max-width: 150px;
       cursor: pointer;
@@ -199,13 +203,15 @@
 
   <!-- TAB NAVIGATION: Channels (active), Settings -->
   <nav>
-    <!-- “Channels” tab is active on this page -->
     <a href="/" class="active-tab">Channels</a>
     <a href="/settings">Settings</a>
   </nav>
 
   <h1>IPTV Channel List</h1>
   
+  <!-- Search Field -->
+  <input type="text" id="search-input" placeholder="Search channels..." onkeyup="filterTable()" />
+
   <!-- Channel List Table -->
   <table id="channels-table">
     <thead>
@@ -235,7 +241,6 @@
                  onkeydown="handleEnter(event, this)">
         </td>
         <td>
-          <!-- Clicking the icon calls openLogoPickerForChannel() -->
           <img src="{{ channel[4] }}" class="channel-logo" onclick="openLogoPickerForChannel('{{ channel[0] }}', '{{ channel[4] }}')" />
         </td>
         <td>{{ channel[1] }}</td>
@@ -402,7 +407,7 @@
           displayLogos(this.value);
         });
       }
-      initEPGTypeAhead(); // <-- Initialize typeahead for the EPG input
+      initEPGTypeAhead(); // Initialize typeahead for the EPG input
     });
     
     function closeLogoPicker() {
@@ -654,15 +659,13 @@
           .catch(err => console.error("Error fetching EPG entries:", err));
       });
 
-      // When a user actually picks something from the datalist,
-      // clear out the suggestions so it doesn’t “pop” again:
+      // When a user picks something from the datalist, clear the suggestions.
       epgInput.addEventListener('change', () => {
         dataList.innerHTML = "";
       });
     }
-  </script>
-  
-  <script>
+
+    // ========== Table Sorting Logic ==========
     document.addEventListener("DOMContentLoaded", function() {
       const table = document.getElementById("channels-table");
       if (!table) return;
@@ -706,6 +709,28 @@
         rows.forEach(row => tbody.appendChild(row));
       }
     });
+
+    // ========== Table Filter Function ==========
+    function filterTable() {
+      const input = document.getElementById("search-input");
+      const filter = input.value.toLowerCase();
+      const table = document.getElementById("channels-table");
+      const tr = table.getElementsByTagName("tr");
+      
+      // Skip header row (assumed to be the first row)
+      for (let i = 1; i < tr.length; i++) {
+        const tds = tr[i].getElementsByTagName("td");
+        let rowContainsQuery = false;
+        for (let j = 0; j < tds.length; j++) {
+          const cellText = tds[j].textContent || tds[j].innerText;
+          if (cellText.toLowerCase().indexOf(filter) > -1) {
+            rowContainsQuery = true;
+            break;
+          }
+        }
+        tr[i].style.display = rowContainsQuery ? "" : "none";
+      }
+    }
   </script>
   
   {{ js_script|safe }}

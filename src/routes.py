@@ -521,3 +521,4 @@ def update_channel_properties(
         return JSONResponse({"success": True})
     except Exception as e:
         return JSONResponse({"success": False, "error": str(e)})
+
