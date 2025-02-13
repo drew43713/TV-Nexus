@@ -1,261 +1,286 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-  <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
-  <meta charset="UTF-8">
-  <title>TV Nexus - Settings</title>
-  <style>
-    /* Navigation bar styling */
-    nav {
-      background: #333;
-      display: flex;
-      justify-content: center;
-      margin-bottom: 20px;
-    }
-    nav a {
-      color: #fff;
-      padding: 10px 20px;
-      text-decoration: none;
-      font-weight: bold;
-    }
-    nav a:hover {
-      background: #444;
-    }
-    .active-tab {
-      border-bottom: 3px solid #ff0;
-    }
-    body {
-      font-family: Arial, sans-serif;
-      background-color: #f4f4f9;
-      color: #333;
-      margin: 0;
-      padding: 20px;
-    }
-    h1 { text-align: center; }
-    .section {
-      width: 80%;
-      margin: 20px auto;
-      padding: 15px;
-      border: 1px solid #ccc;
-      background-color: #fff;
-      border-radius: 5px;
-    }
-    .section h2 { text-align: center; margin-top: 0; }
-    .section ul { list-style-type: none; padding: 0; }
-    .section li {
-      padding: 8px 5px;
-      border-bottom: 1px solid #ddd;
-    }
-    .section li:last-child { border-bottom: none; }
-    .config-form {
-      text-align: center;
-      margin-bottom: 10px;
-    }
-    .config-form input[type="number"],
-    .config-form input[type="file"] {
-      padding: 5px;
-      margin-right: 10px;
-    }
-    .config-form button { padding: 5px 10px; cursor: pointer; }
-    .confirmation {
-      background-color: #dff0d8;
-      border: 1px solid #d0e9c6;
-      color: #3c763d;
-      padding: 10px;
-      margin: 10px auto;
-      width: 80%;
-      text-align: center;
-      border-radius: 5px;
-    }
-    /* Stream status styling */
-    #stream-status {
-      background-color: #eef;
-      padding: 10px;
-      border: 1px solid #99c;
-      border-radius: 5px;
-      overflow-x: auto;
-    }
-    #stream-status table {
-      width: 100%;
-      border-collapse: collapse;
-    }
-    #stream-status th, #stream-status td {
-      border: 1px solid #ccc;
-      padding: 5px;
-      text-align: left;
-    }
-    #stream-status th { background-color: #ddd; }
-  </style>
-</head>
-<body>
+  <head>
+    <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+    <meta charset="UTF-8">
+    <title>TV Nexus - Settings</title>
+    <style>
+      /* Navigation bar styling */
+      nav {
+        background: #333;
+        display: flex;
+        justify-content: center;
+        margin-bottom: 20px;
+      }
+      nav a {
+        color: #fff;
+        padding: 10px 20px;
+        text-decoration: none;
+        font-weight: bold;
+      }
+      nav a:hover {
+        background: #444;
+      }
+      .active-tab {
+        border-bottom: 3px solid #ff0;
+      }
+      body {
+        font-family: Arial, sans-serif;
+        background-color: #f4f4f9;
+        color: #333;
+        margin: 0;
+        padding: 20px;
+      }
+      h1 {
+        text-align: center;
+      }
+      .section {
+        width: 80%;
+        margin: 20px auto;
+        padding: 15px;
+        border: 1px solid #ccc;
+        background-color: #fff;
+        border-radius: 5px;
+      }
+      .section h2 {
+        text-align: center;
+        margin-top: 0;
+      }
+      .section ul {
+        list-style-type: none;
+        padding: 0;
+      }
+      .section li {
+        padding: 8px 5px;
+        border-bottom: 1px solid #ddd;
+      }
+      .section li:last-child {
+        border-bottom: none;
+      }
+      .config-form {
+        text-align: center;
+        margin-bottom: 10px;
+      }
+      .config-form input[type="number"],
+      .config-form input[type="file"] {
+        padding: 5px;
+        margin-right: 10px;
+      }
+      .config-form button {
+        padding: 5px 10px;
+        cursor: pointer;
+      }
+      .confirmation {
+        background-color: #dff0d8;
+        border: 1px solid #d0e9c6;
+        color: #3c763d;
+        padding: 10px;
+        margin: 10px auto;
+        width: 80%;
+        text-align: center;
+        border-radius: 5px;
+      }
+      /* Stream status styling */
+      #stream-status {
+        background-color: #eef;
+        padding: 10px;
+        border: 1px solid #99c;
+        border-radius: 5px;
+        overflow-x: auto;
+      }
+      #stream-status table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+      #stream-status th,
+      #stream-status td {
+        border: 1px solid #ccc;
+        padding: 5px;
+        text-align: left;
+      }
+      #stream-status th {
+        background-color: #ddd;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Navigation -->
+    <nav>
+      <a href="/">TV Nexus - Channels</a>
+      <a href="/settings" class="active-tab">TV Nexus - Settings</a>
+    </nav>
 
-  <!-- Navigation -->
-  <nav>
-    <a href="/">TV Nexus - Channels</a>
-    <a href="/settings" class="active-tab">TV Nexus - Settings</a>
-  </nav>
+    <h1>TV Nexus Settings</h1>
 
-  <h1>TV Nexus Settings</h1>
-
-  {% if updated %}
-  <div class="confirmation" id="confirmation-message">
-    Configuration updated successfully!
-  </div>
-  {% endif %}
-  {% if epg_upload_success %}
-  <div class="confirmation" id="epg-upload-confirmation">
-    EPG file uploaded and parsed successfully!
-  </div>
-  {% endif %}
-  {% if m3u_upload_success %}
-  <div class="confirmation" id="m3u-upload-confirmation">
-    M3U file uploaded successfully!
-  </div>
-  {% endif %}
-
-  <!-- M3U Files Section (at the top) -->
-  <div class="section">
-    <h2>M3U File</h2>
-    <!-- Upload prompt above the file list -->
-    <div class="config-form">
-      <form action="/upload_m3u" method="post" enctype="multipart/form-data">
-        <input type="file" name="file" accept=".m3u" required>
-        <button type="submit">Upload M3U File</button>
-      </form>
+    {% if updated %}
+    <div class="confirmation" id="confirmation-message">
+      Configuration updated successfully!
     </div>
-    {% if m3u_file %}
+    {% endif %}
+    {% if epg_upload_success %}
+    <div class="confirmation" id="epg-upload-confirmation">
+      EPG file uploaded and parsed successfully!
+    </div>
+    {% endif %}
+    {% if m3u_upload_success %}
+    <div class="confirmation" id="m3u-upload-confirmation">
+      M3U file uploaded successfully!
+    </div>
+    {% endif %}
+
+    <!-- M3U Files Section (at the top) -->
+    <div class="section">
+      <h2>M3U File</h2>
+      <!-- Upload prompt above the file list -->
+      <div class="config-form">
+        <form action="/upload_m3u" method="post" enctype="multipart/form-data">
+          <input type="file" name="file" accept=".m3u" required>
+          <button type="submit">Upload M3U File</button>
+        </form>
+      </div>
+      {% if m3u_file %}
       <ul>
         <li>{{ m3u_file }}</li>
       </ul>
-    {% else %}
+      {% else %}
       <p>No M3U file loaded.</p>
-    {% endif %}
-  </div>
-
-  <!-- EPG Files Section -->
-  <div class="section">
-    <h2>EPG Files</h2>
-    <!-- Upload prompt above the file list -->
-    <div class="config-form">
-      <form action="/upload_epg" method="post" enctype="multipart/form-data">
-        <input type="file" name="file" accept=".xml,.xmltv,.gz" required>
-        <button type="submit">Upload EPG File</button>
-      </form>
+      {% endif %}
     </div>
-    {% if epg_files %}
+
+    <!-- EPG Files Section -->
+    <div class="section">
+      <h2>EPG Files</h2>
+      <!-- Upload prompt above the file list -->
+      <div class="config-form">
+        <form action="/upload_epg" method="post" enctype="multipart/form-data">
+          <input type="file" name="file" accept=".xml,.xmltv,.gz" required>
+          <button type="submit">Upload EPG File</button>
+        </form>
+      </div>
+      {% if epg_files %}
       <ul>
         {% for file in epg_files %}
-          <li>{{ file }}</li>
+        <li>{{ file }}</li>
         {% endfor %}
       </ul>
-    {% else %}
+      {% else %}
       <p>No EPG files loaded.</p>
-    {% endif %}
-  </div>
-
-  <!-- Tuner Count Section -->
-  <div class="section">
-    <h2>Tuner Count</h2>
-    <div class="config-form">
-      <form action="/update_config" method="post">
-        <label for="tuner_count">Number of Tuners:</label>
-        <input type="number" id="tuner_count" name="tuner_count" value="{{ tuner_count }}" min="1">
-        <button type="submit">Update</button>
-      </form>
+      {% endif %}
     </div>
-  </div>
 
-  <!-- Stream Status Section -->
-  <div class="section">
-    <h2>Stream Status</h2>
-    <div id="stream-status">
-      <div id="stream-status-content">Loading stream status...</div>
+    <!-- Tuner Count Section -->
+    <div class="section">
+      <h2>Tuner Count</h2>
+      <div class="config-form">
+        <form action="/update_config" method="post">
+          <label for="tuner_count">Number of Tuners:</label>
+          <input type="number" id="tuner_count" name="tuner_count" value="{{ tuner_count }}" min="1">
+          <button type="submit">Update</button>
+        </form>
+      </div>
     </div>
-  </div>
 
-  <script>
-    // Hide confirmation messages after 5 seconds.
-    setTimeout(() => {
-      const conf = document.getElementById("confirmation-message");
-      if(conf) conf.style.display = "none";
-      const epgConf = document.getElementById("epg-upload-confirmation");
-      if(epgConf) epgConf.style.display = "none";
-      const m3uConf = document.getElementById("m3u-upload-confirmation");
-      if(m3uConf) m3uConf.style.display = "none";
-    }, 5000);
+    <!-- Stream Status Section -->
+    <div class="section">
+      <h2>Stream Status</h2>
+      <div id="stream-status">
+        <div id="stream-status-content">Loading stream status...</div>
+      </div>
+    </div>
 
-    // Remove query parameters from URL after page load.
-    window.addEventListener("DOMContentLoaded", () => {
-      const urlParams = new URLSearchParams(window.location.search);
-      if (urlParams.has("updated") || urlParams.has("epg_upload_success") || urlParams.has("m3u_upload_success")){
-        window.history.replaceState({}, document.title, "/settings");
-      }
-      updateStreamStatus();
-      setInterval(updateStreamStatus, 5000);
-    });
+    <script>
+      // Hide confirmation messages after 5 seconds.
+      setTimeout(() => {
+        const conf = document.getElementById("confirmation-message");
+        if (conf) conf.style.display = "none";
+        const epgConf = document.getElementById("epg-upload-confirmation");
+        if (epgConf) epgConf.style.display = "none";
+        const m3uConf = document.getElementById("m3u-upload-confirmation");
+        if (m3uConf) m3uConf.style.display = "none";
+      }, 5000);
 
-    function updateStreamStatus(){
-      fetch('/api/stream_status')
-      .then(response => response.json())
-      .then(data => {
-        const container = document.getElementById("stream-status-content");
-        if(Object.keys(data).length === 0){
-          container.innerHTML = "<p>No active streams.</p>";
-        } else {
-          let html = "<table><thead><tr>";
-          html += "<th>Channel ID</th>";
-          html += "<th>Channel Name</th>";
-          html += "<th>Current Program</th>";
-          html += "<th>Subscribers</th>";
-          html += "<th>Stream URL</th>";
-          html += "<th>Video Codec</th>";
-          html += "<th>Resolution</th>";
-          html += "<th>Audio Info</th>";
-          html += "</tr></thead><tbody>";
-          for(const channel in data){
-            const stream = data[channel];
-            const subscribers = stream.subscriber_count;
-            const streamUrl = stream.stream_url;
-            const channelName = stream.channel_name || "N/A";
-            let currentProgram = "N/A";
-            if(stream.current_program && stream.current_program.title){
-              currentProgram = stream.current_program.title;
-            }
-            let videoCodec = "N/A";
-            let resolution = "N/A";
-            let audioInfo = "N/A";
-            if(stream.probe_info && stream.probe_info.streams){
-              const streams = stream.probe_info.streams;
-              const videoStream = streams.find(s => s.codec_type === "video");
-              if(videoStream){
-                videoCodec = videoStream.codec_name;
-                resolution = videoStream.width + "x" + videoStream.height;
-              }
-              const audioStream = streams.find(s => s.codec_type === "audio");
-              if(audioStream){
-                audioInfo = audioStream.codec_name + " " + audioStream.sample_rate + "Hz " + audioStream.channels + "ch";
-              }
-            }
-            html += `<tr>
-                      <td>${channel}</td>
-                      <td>${channelName}</td>
-                      <td>${currentProgram}</td>
-                      <td>${subscribers}</td>
-                      <td><a href="${streamUrl}" target="_blank">${streamUrl}</a></td>
-                      <td>${videoCodec}</td>
-                      <td>${resolution}</td>
-                      <td>${audioInfo}</td>
-                    </tr>`;
-          }
-          html += "</tbody></table>";
-          container.innerHTML = html;
+      // Remove query parameters from URL after page load.
+      window.addEventListener("DOMContentLoaded", () => {
+        const urlParams = new URLSearchParams(window.location.search);
+        if (
+          urlParams.has("updated") ||
+          urlParams.has("epg_upload_success") ||
+          urlParams.has("m3u_upload_success")
+        ) {
+          window.history.replaceState({}, document.title, "/settings");
         }
-      })
-      .catch(error => {
-        document.getElementById("stream-status-content").innerHTML = "<p>Error fetching stream status: " + error + "</p>";
+        updateStreamStatus();
+        setInterval(updateStreamStatus, 5000);
       });
-    }
-  </script>
 
-</body>
+      function updateStreamStatus() {
+        fetch("/api/stream_status")
+          .then((response) => response.json())
+          .then((data) => {
+            const container = document.getElementById("stream-status-content");
+            if (Object.keys(data).length === 0) {
+              container.innerHTML = "<p>No active streams.</p>";
+            } else {
+              let html = "<table><thead><tr>";
+              html += "<th>Channel ID</th>";
+              html += "<th>Channel Name</th>";
+              html += "<th>Current Program</th>";
+              html += "<th>Subscribers</th>";
+              html += "<th>Stream URL</th>";
+              html += "<th>Video Codec</th>";
+              html += "<th>Resolution</th>";
+              html += "<th>Audio Info</th>";
+              html += "</tr></thead><tbody>";
+              for (const channel in data) {
+                const stream = data[channel];
+                const subscribers = stream.subscriber_count;
+                const streamUrl = stream.stream_url;
+                const channelName = stream.channel_name || "N/A";
+                let currentProgram = "N/A";
+                if (stream.current_program && stream.current_program.title) {
+                  currentProgram = stream.current_program.title;
+                }
+                let videoCodec = "N/A";
+                let resolution = "N/A";
+                let audioInfo = "N/A";
+                if (stream.probe_info && stream.probe_info.streams) {
+                  const streams = stream.probe_info.streams;
+                  const videoStream = streams.find((s) => s.codec_type === "video");
+                  if (videoStream) {
+                    videoCodec = videoStream.codec_name;
+                    resolution = videoStream.width + "x" + videoStream.height;
+                  }
+                  const audioStream = streams.find((s) => s.codec_type === "audio");
+                  if (audioStream) {
+                    audioInfo =
+                      audioStream.codec_name +
+                      " " +
+                      audioStream.sample_rate +
+                      "Hz " +
+                      audioStream.channels +
+                      "ch";
+                  }
+                }
+                html += `<tr>
+                          <td>${channel}</td>
+                          <td>${channelName}</td>
+                          <td>${currentProgram}</td>
+                          <td>${subscribers}</td>
+                          <td><a href="${streamUrl}" target="_blank">${streamUrl}</a></td>
+                          <td>${videoCodec}</td>
+                          <td>${resolution}</td>
+                          <td>${audioInfo}</td>
+                        </tr>`;
+              }
+              html += "</tbody></table>";
+              container.innerHTML = html;
+            }
+          })
+          .catch((error) => {
+            document.getElementById("stream-status-content").innerHTML =
+              "<p>Error fetching stream status: " + error + "</p>";
+          });
+      }
+    </script>
+  </body>
 </html>

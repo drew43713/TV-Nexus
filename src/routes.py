@@ -354,17 +354,20 @@ def update_channel_properties(
     new_name: str = Form(...),
     new_category: str = Form(...),
     new_logo: str = Form(...),
-    new_epg_entry: str = Form(...)
+    new_epg_entry: str = Form(...),
+    new_active: int = Form(...)  # Accept active status (1 or 0)
 ):
     try:
         conn = sqlite3.connect(DB_FILE)
         c = conn.cursor()
-        c.execute("SELECT tvg_name FROM channels WHERE id = ?", (channel_id,))
+        # Retrieve the current epg entry and active status.
+        c.execute("SELECT tvg_name, active FROM channels WHERE id = ?", (channel_id,))
         row = c.fetchone()
         if not row:
             conn.close()
             return JSONResponse({"success": False, "error": "Channel not found."})
         old_epg_entry = row[0] if row[0] is not None else ""
+        old_active = row[1]  # Current active status from the database.
         updated_channel_id = channel_id
         if channel_id != new_channel_number:
             swap = swap_channel_ids(channel_id, new_channel_number)
@@ -372,17 +375,30 @@ def update_channel_properties(
             clear_shared_stream(channel_id)
             clear_shared_stream(new_channel_number)
             updated_channel_id = new_channel_number
+        # Update the channel record with the new values, including the active status.
         c.execute("""
             UPDATE channels 
-            SET name = ?, group_title = ?, logo_url = ?, tvg_name = ?
+            SET name = ?, group_title = ?, logo_url = ?, tvg_name = ?, active = ?
             WHERE id = ?
-        """, (new_name, new_category, new_logo, new_epg_entry, updated_channel_id))
+        """, (new_name, new_category, new_logo, new_epg_entry, new_active, updated_channel_id))
         conn.commit()
         conn.close()
+        # Regenerate EPG data if the EPG entry changed...
         if new_epg_entry != old_epg_entry:
             update_program_data_for_channel(updated_channel_id)
         else:
             update_channel_metadata_in_epg(updated_channel_id, new_name, new_logo)
+        # AND regenerate the EPG if the channel was switched from inactive to active.
+        if new_active == 1 and old_active == 0:
+            update_program_data_for_channel(updated_channel_id)
         return JSONResponse({"success": True})
     except Exception as e:
         return JSONResponse({"success": False, "error": str(e)})
+
+@router.post("/auto_number_channels")
+def auto_number_channels(start_number: int = Form(...)):
+    """
+
+    Some code here to auto-number channels.
+
+    """
