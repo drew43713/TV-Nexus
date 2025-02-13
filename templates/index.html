@@ -1,9 +1,10 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+  <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>{{ BASE_URL }} - IPTV Channel List</title>
+  <title>TV Nexus - Channel Manager</title>
   <style>
     /* Navigation bar (tabs) styling */
     nav {
@@ -77,6 +78,25 @@
     button.save-all-button {
       padding: 5px 10px;
       cursor: pointer;
+    }
+    /* Bulk activation styles */
+    #bulk-actions {
+      margin-bottom: 20px;
+      text-align: right;
+    }
+    #bulk-actions button {
+      padding: 5px 10px;
+      margin-left: 5px;
+      cursor: pointer;
+    }
+    /* Add select-all checkbox styling in header */
+    th.active-header {
+      position: relative;
+    }
+    th.active-header input#select-all {
+      position: absolute;
+      top: 5px;
+      right: 5px;
     }
     /* Modal and overlay styles */
     .modal,
@@ -203,11 +223,17 @@
 
   <!-- TAB NAVIGATION: Channels (active), Settings -->
   <nav>
-    <a href="/" class="active-tab">Channels</a>
-    <a href="/settings">Settings</a>
+    <a href="/" class="active-tab">TV Nexus - Channels</a>
+    <a href="/settings">TV Nexus - Settings</a>
   </nav>
 
-  <h1>IPTV Channel List</h1>
+  <h1>TV Nexus Channel List</h1>
+  
+  <!-- Bulk actions -->
+  <div id="bulk-actions">
+    <button onclick="bulkUpdateActive(true)">Activate Selected</button>
+    <button onclick="bulkUpdateActive(false)">Deactivate Selected</button>
+  </div>
   
   <!-- Search Field -->
   <input type="text" id="search-input" placeholder="Search channels..." onkeyup="filterTable()" />
@@ -217,6 +243,7 @@
     <thead>
       <tr>
         <th>Channel #</th>
+        <th class="active-header">Active <input type="checkbox" id="select-all" onclick="toggleSelectAll(this)"></th>
         <th>Logo</th>
         <th>Channel Name</th>
         <th>Category</th>
@@ -230,7 +257,8 @@
           data-name="{{ channel[1] }}" 
           data-logo="{{ channel[4] }}" 
           data-category="{{ channel[5] }}" 
-          data-epg="{{ epg_map[channel[0]|string]['title'] if channel[0]|string in epg_map and epg_map[channel[0]|string] else 'No Program' }}"
+          data-active="{{ channel[6] }}"
+          data-epg="{% if channel[6] != 1 %}Channel Inactive{% elif channel[0]|string in epg_map and epg_map[channel[0]|string] %}{{ epg_map[channel[0]|string]['title'] }}{% else %}No Program{% endif %}"
           data-epg-entry="{{ epg_entry_map[channel[0]|string] if channel[0]|string in epg_entry_map else 'Unknown' }}"
           data-stream-url="{{ stream_map[channel[0]|string] if channel[0]|string in stream_map else 'N/A' }}">
         <td>
@@ -241,11 +269,22 @@
                  onkeydown="handleEnter(event, this)">
         </td>
         <td>
+          <input type="checkbox" class="active-checkbox" {% if channel[6] == 1 %}checked{% endif %} onchange="updateActiveStatus(this, '{{ channel[0] }}')">
+        </td>
+        <td>
           <img src="{{ channel[4] }}" class="channel-logo" onclick="openLogoPickerForChannel('{{ channel[0] }}', '{{ channel[4] }}')" />
         </td>
         <td>{{ channel[1] }}</td>
         <td>{{ channel[5] }}</td>
-        <td>{{ epg_map[channel[0]|string]['title'] if channel[0]|string in epg_map and epg_map[channel[0]|string] else 'No Program' }}</td>
+        <td>
+          {% if channel[6] != 1 %}
+            Channel Inactive
+          {% elif channel[0]|string in epg_map and epg_map[channel[0]|string] %}
+            {{ epg_map[channel[0]|string]['title'] }}
+          {% else %}
+            No Program
+          {% endif %}
+        </td>
         <td>
           <button class="edit-button" onclick="handleEditButtonClick(event, this)">Edit</button>
         </td>
@@ -284,7 +323,7 @@
     </div>
   </div>
   
-  <!-- Logo Picker Overlay and Modal (for selecting a logo) -->
+  <!-- Logo Picker Overlay and Modal -->
   <div class="logo-picker-overlay" id="logo-picker-overlay" style="display:none; position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.5); z-index:1100;" onclick="closeLogoPicker()"></div>
   <div class="logo-picker-modal" id="logo-picker-modal" style="display:none; position: fixed; top:50%; left:50%; transform: translate(-50%, -50%); background: #fff; padding: 20px; z-index:1200;">
     <div class="logo-picker-content">
@@ -306,10 +345,70 @@
     let allLogos = [];
     let editedChannelName = "";
     let editedChannelCategory = "";
-    // Global variable to track if the logo picker is being used from the list view.
     let logoPickerTargetChannelId = null;
 
-    // Called when an icon in the list is clicked.
+    function updateActiveStatus(checkbox, channelId) {
+      const active = checkbox.checked;
+      // Instantly update active status.
+      fetch("/update_channel_active", {
+        method: "POST",
+        headers: {"Content-Type": "application/x-www-form-urlencoded"},
+        body: `channel_id=${channelId}&active=${active}`
+      })
+      .then(response => response.json())
+      .then(data => {
+        if (!data.success) {
+          alert("Failed to update active status");
+        }
+      })
+      .catch(error => {
+        alert("Error updating active status: " + error);
+      });
+    }
+    
+    function bulkUpdateActive(active) {
+      const checkboxes = document.querySelectorAll(".active-checkbox");
+      let selectedIds = [];
+      checkboxes.forEach(cb => {
+        if (cb.checked && cb.closest("tr").style.display !== "none") {
+          selectedIds.push(cb.closest("tr").getAttribute("data-channel"));
+        }
+      });
+      if (selectedIds.length === 0) {
+        alert("No channels selected for bulk update.");
+        return;
+      }
+      const channelIds = selectedIds.join(",");
+      fetch("/update_channels_active_bulk", {
+        method: "POST",
+        headers: {"Content-Type": "application/x-www-form-urlencoded"},
+        body: `channel_ids=${channelIds}&active=${active}`
+      })
+      .then(response => response.json())
+      .then(data => {
+        if (data.success) {
+          checkboxes.forEach(cb => {
+            if (selectedIds.includes(cb.closest("tr").getAttribute("data-channel"))) {
+              cb.checked = active;
+            }
+          });
+          alert("Bulk update successful.");
+        } else {
+          alert("Bulk update failed.");
+        }
+      })
+      .catch(error => alert("Bulk update error: " + error));
+    }
+    
+    function toggleSelectAll(master) {
+      const checkboxes = document.querySelectorAll('.active-checkbox');
+      checkboxes.forEach(cb => {
+        if (cb.closest('tr').style.display !== "none") {
+          cb.checked = master.checked;
+        }
+      });
+    }
+    
     function openLogoPickerForChannel(channelId, currentLogo) {
       logoPickerTargetChannelId = channelId;
       selectedLogo = currentLogo;
@@ -322,13 +421,11 @@
         document.getElementById('logo-picker-overlay').style.display = 'block';
         document.getElementById('logo-picker-modal').style.display = 'block';
         document.getElementById('logo-picker-modal').scrollTop = 0;
-        // Auto-focus the search input so you can start typing immediately.
         document.getElementById("logo-search").focus();
       })
       .catch(error => console.error("Error fetching logos:", error));
     }
-
-    // Existing openLogoPicker() for modal usage.
+    
     function openLogoPicker() {
       logoPickerTargetChannelId = null;
       fetch('/api/logos')
@@ -340,7 +437,6 @@
         document.getElementById('logo-picker-overlay').style.display = 'block';
         document.getElementById('logo-picker-modal').style.display = 'block';
         document.getElementById('logo-picker-modal').scrollTop = 0;
-        // Auto-focus the search input so you can start typing immediately.
         document.getElementById("logo-search").focus();
       })
       .catch(error => console.error("Error fetching logos:", error));
@@ -360,7 +456,6 @@
             e.stopPropagation();
             selectedLogo = logoUrl;
             if (logoPickerTargetChannelId !== null) {
-              // Logo picker opened from list view; update the channel immediately.
               let formData = new FormData();
               formData.append("channel_id", logoPickerTargetChannelId);
               formData.append("new_logo", logoUrl);
@@ -388,7 +483,6 @@
                 closeLogoPicker();
               });
             } else {
-              // If not from list view, update modal.
               document.getElementById('modal-logo').src = logoUrl;
               Array.from(pickerContainer.children).forEach(child => child.classList.remove("selected"));
               logoImg.classList.add("selected");
@@ -407,7 +501,7 @@
           displayLogos(this.value);
         });
       }
-      initEPGTypeAhead(); // Initialize typeahead for the EPG input
+      initEPGTypeAhead();
     });
     
     function closeLogoPicker() {
@@ -445,11 +539,8 @@
       document.getElementById('modal-stream-url').innerText = streamUrl;
       document.getElementById('modal-stream-url').href = streamUrl;
       
-      // Set the initial value for EPG input (if there's an existing mapping)
       document.getElementById('epg-input').value = epgEntry || "";
       document.getElementById('probe-results').innerText = "";
-
-      // Show the modal
       document.getElementById('modal').style.display = 'block';
       document.getElementById('overlay').style.display = 'block';
     }
@@ -534,9 +625,7 @@
       input.parentNode.replaceChild(p, input);
     }
     
-    function updateModalChannelNumber(input) {
-      // No specific action needed here; the final save is done by saveAllChanges().
-    }
+    function updateModalChannelNumber(input) { }
     
     function updateChannelNumber(input) {
       let oldValue = input.getAttribute('data-old-value');
@@ -569,7 +658,6 @@
       }
       const modalChannelNumberInput = document.getElementById('modal-channel-number');
       const updatedChannelNumber = modalChannelNumberInput.value;
-      
       const epgEntry = document.getElementById('epg-input').value;
       const formData = new FormData();
       formData.append("channel_id", currentChannelId);
@@ -578,7 +666,6 @@
       formData.append("new_category", editedChannelCategory);
       formData.append("new_logo", selectedLogo);
       formData.append("new_epg_entry", epgEntry);
-  
       fetch("/update_channel_properties", {
         method: "POST",
         body: formData
@@ -626,29 +713,20 @@
         input.blur();
       }
     }
-
-    // ========== Typeahead Logic for EPG Input ==========
+    
     function initEPGTypeAhead() {
       const epgInput = document.getElementById('epg-input');
       const dataList = document.getElementById('epg-list');
       if (!epgInput || !dataList) return;
-
-      // Listen for typing in #epg-input
       epgInput.addEventListener('input', function() {
-        // Clear old options
         dataList.innerHTML = "";
-
         const searchTerm = epgInput.value.trim();
-        // Only search if user has typed >= 2 chars
         if (searchTerm.length < 2) {
           return;
         }
-
-        // Call the endpoint with ?search=
         fetch(`/api/epg_entries?search=${encodeURIComponent(searchTerm)}`)
           .then(response => response.json())
           .then(entries => {
-            // Clear existing options
             dataList.innerHTML = "";
             entries.forEach(name => {
               const option = document.createElement('option');
@@ -658,20 +736,15 @@
           })
           .catch(err => console.error("Error fetching EPG entries:", err));
       });
-
-      // When a user picks something from the datalist, clear the suggestions.
       epgInput.addEventListener('change', () => {
         dataList.innerHTML = "";
       });
     }
-
-    // ========== Table Sorting Logic ==========
+    
     document.addEventListener("DOMContentLoaded", function() {
       const table = document.getElementById("channels-table");
       if (!table) return;
       const headers = table.querySelectorAll("thead th");
-
-      // Make the columns clickable to sort
       headers.forEach((header, index) => {
         header.addEventListener("click", () => {
           sortTableByColumn(table, index);
@@ -690,12 +763,9 @@
         let ascending = header.getAttribute("data-sort-asc") === "true";
         ascending = !ascending;
         header.setAttribute("data-sort-asc", ascending);
-
-        // Clear sort state from other columns
         table.querySelectorAll("thead th").forEach((th, idx) => {
           if (idx !== columnIndex) th.removeAttribute("data-sort-asc");
         });
-
         rows.sort((a, b) => {
           let cellA = getCellValue(a.cells[columnIndex]);
           let cellB = getCellValue(b.cells[columnIndex]);
@@ -709,15 +779,12 @@
         rows.forEach(row => tbody.appendChild(row));
       }
     });
-
-    // ========== Table Filter Function ==========
+    
     function filterTable() {
       const input = document.getElementById("search-input");
       const filter = input.value.toLowerCase();
       const table = document.getElementById("channels-table");
       const tr = table.getElementsByTagName("tr");
-      
-      // Skip header row (assumed to be the first row)
       for (let i = 1; i < tr.length; i++) {
         const tds = tr[i].getElementsByTagName("td");
         let rowContainsQuery = false;

@@ -3,7 +3,7 @@ import gzip
 import html
 import sqlite3
 import xml.etree.ElementTree as ET
-from datetime import datetime
+from datetime import datetime, timedelta
 import re
 
 # Import BASE_URL (which your config builds with DOMAIN_NAME if available)
@@ -14,24 +14,14 @@ from .database import swap_channel_ids  # if needed in this module, else remove
 # 1) Helper to parse/normalize XMLTV date/time
 # ====================================================
 def parse_xmltv_datetime(dt_str):
-    """
-    Parse an XMLTV datetime string like '20230201130000 +0100'
-    or '20230201130000' or '20230201130000 -0500', etc.
-    Return a UTC datetime string 'YYYYmmddHHMMSS +0000'.
-    If the format is unrecognized, returns '19700101000000 +0000'.
-    """
     match = re.match(r'^(\d{14})(?:\s*([+-]\d{4}))?$', dt_str.replace('-', ' -').replace('+', ' +'))
     if not match:
         return "19700101000000 +0000"
-
     dt_main, offset_str = match.groups()
-
-    from datetime import timedelta
     try:
         naive_dt = datetime.strptime(dt_main, "%Y%m%d%H%M%S")
     except ValueError:
         return "19700101000000 +0000"
-
     if offset_str:
         sign = 1 if offset_str.startswith('+') else -1
         hours = int(offset_str[1:3])
@@ -39,23 +29,14 @@ def parse_xmltv_datetime(dt_str):
         offset_delta = sign * (hours * 60 + minutes)
         utc_dt = naive_dt - timedelta(minutes=offset_delta)
     else:
-        # No offset means we treat dt_main as already UTC.
         utc_dt = naive_dt
-
     return utc_dt.strftime("%Y%m%d%H%M%S") + " +0000"
-
 
 # ====================================================
 # 2) Parse raw EPG files into 'raw_epg_*' tables
 # ====================================================
 def parse_raw_epg_files():
-    """
-    Parse all raw EPG files from EPG_DIR (.xml, .xmltv, .gz)
-    into raw_epg_channels / raw_epg_programs tables.
-    This should be called once after new EPG files are uploaded.
-    """
     print("[INFO] Parsing raw EPG files...")
-
     epg_files = [
         os.path.join(EPG_DIR, f)
         for f in os.listdir(EPG_DIR)
@@ -67,8 +48,6 @@ def parse_raw_epg_files():
 
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-
-    # Clear old data
     c.execute("DELETE FROM raw_epg_channels")
     c.execute("DELETE FROM raw_epg_programs")
 
@@ -83,42 +62,25 @@ def parse_raw_epg_files():
                 else:
                     tree = ET.parse(f)
             root = tree.getroot()
-
-            # -- Read <channel> elements
             for channel_el in root.findall("channel"):
                 raw_id = html.unescape(channel_el.get("id", "").strip())
-
                 disp_name_el = channel_el.find("display-name")
                 disp_name = ""
                 if disp_name_el is not None and disp_name_el.text:
                     disp_name = html.unescape(disp_name_el.text.strip())
-
-                c.execute("""
-                    INSERT INTO raw_epg_channels (raw_id, display_name)
-                    VALUES (?, ?)
-                """, (raw_id, disp_name))
-
-            # -- Read <programme> elements
+                c.execute("INSERT INTO raw_epg_channels (raw_id, display_name) VALUES (?, ?)", (raw_id, disp_name))
             for prog_el in root.findall("programme"):
                 raw_prog_channel = html.unescape(prog_el.get("channel", "").strip())
-
                 raw_start_time = prog_el.get("start", "").strip()
                 raw_stop_time = prog_el.get("stop", "").strip()
-
                 start_time = parse_xmltv_datetime(raw_start_time)
                 stop_time = parse_xmltv_datetime(raw_stop_time)
-
                 title_el = prog_el.find("title")
                 title_text = title_el.text.strip() if (title_el is not None and title_el.text) else ""
-
                 desc_el = prog_el.find("desc")
                 desc_text = desc_el.text.strip() if (desc_el is not None and desc_el.text) else ""
-
-                c.execute("""
-                    INSERT INTO raw_epg_programs (raw_channel_id, start, stop, title, description)
-                    VALUES (?, ?, ?, ?, ?)
-                """, (raw_prog_channel, start_time, stop_time, title_text, desc_text))
-
+                c.execute("INSERT INTO raw_epg_programs (raw_channel_id, start, stop, title, description) VALUES (?, ?, ?, ?, ?)",
+                          (raw_prog_channel, start_time, stop_time, title_text, desc_text))
         except Exception as e:
             print(f"[ERROR] Parsing {epg_file} failed: {e}")
 
@@ -126,31 +88,18 @@ def parse_raw_epg_files():
     conn.close()
     print("[INFO] Finished populating raw_epg_* tables.")
 
-
 # ====================================================
 # 3) Build combined EPG from raw data (full rebuild)
 # ====================================================
 def build_combined_epg():
-    """
-    1) Clears epg_programs,
-    2) Builds a new EPG.xml in MODIFIED_EPG_DIR,
-    3) For each channel in 'channels', tries to match 
-       'raw_epg_channels' (by tvg_name or name), 
-       then merges in the relevant programmes from 'raw_epg_programs'.
-    """
     print("[INFO] Building combined EPG from raw DB...")
-
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-
-    # Clear final epg_programs
     c.execute("DELETE FROM epg_programs")
-
-    # Start combined XML
     combined_root = ET.Element("tv")
 
-    # Get channels from the 'channels' table
-    c.execute("SELECT id, tvg_name, name, logo_url FROM channels")
+    # Only include channels that are active.
+    c.execute("SELECT id, tvg_name, name, logo_url FROM channels WHERE active = 1")
     db_channels = c.fetchall()
 
     for (db_id, db_tvg_name, db_name, db_logo) in db_channels:
@@ -158,67 +107,37 @@ def build_combined_epg():
         db_name = db_name or ""
         db_logo = db_logo or ""
 
-        # Create <channel> in combined EPG
         channel_el = ET.Element("channel", id=str(db_id))
-
         disp_el = ET.Element("display-name")
         disp_el.text = db_name
         channel_el.append(disp_el)
-
         if db_logo:
-            # If logo is relative, build full URL from BASE_URL
             if db_logo.startswith("/"):
                 full_logo_url = f"{BASE_URL}{db_logo}"
             else:
                 full_logo_url = db_logo
             icon_el = ET.Element("icon", src=full_logo_url)
             channel_el.append(icon_el)
-
         combined_root.append(channel_el)
 
-        # Insert channel into epg_channels for quick search
         c.execute("INSERT OR IGNORE INTO epg_channels (name) VALUES (?)", (db_name,))
 
-        # Find matching raw channels
         raw_ids = []
         if db_tvg_name:
-            c.execute("""
-                SELECT DISTINCT raw_id
-                  FROM raw_epg_channels
-                 WHERE raw_id = ?
-                    OR display_name = ?
-            """, (db_tvg_name, db_tvg_name))
+            c.execute("SELECT DISTINCT raw_id FROM raw_epg_channels WHERE raw_id = ? OR display_name = ?",
+                      (db_tvg_name, db_tvg_name))
             raw_ids = [r[0] for r in c.fetchall()]
         else:
-            c.execute("""
-                SELECT DISTINCT raw_id
-                  FROM raw_epg_channels
-                 WHERE display_name = ?
-            """, (db_name,))
+            c.execute("SELECT DISTINCT raw_id FROM raw_epg_channels WHERE display_name = ?", (db_name,))
             raw_ids = [r[0] for r in c.fetchall()]
 
-        # For each matching raw_id, copy its programmes
         for rid in raw_ids:
-            c.execute("""
-                SELECT start, stop, title, description
-                  FROM raw_epg_programs
-                 WHERE raw_channel_id = ?
-            """, (rid,))
+            c.execute("SELECT start, stop, title, description FROM raw_epg_programs WHERE raw_channel_id = ?", (rid,))
             raw_progs = c.fetchall()
-
             for (start_t, stop_t, title_txt, desc_txt) in raw_progs:
-                # Insert into final epg_programs
-                c.execute("""
-                    INSERT INTO epg_programs (channel_tvg_name, start, stop, title, description)
-                    VALUES (?, ?, ?, ?, ?)
-                """, (str(db_id), start_t, stop_t, title_txt, desc_txt))
-
-                # Create <programme> in EPG.xml
-                prog_el = ET.Element("programme", {
-                    "channel": str(db_id),
-                    "start": start_t,
-                    "stop": stop_t
-                })
+                c.execute("INSERT INTO epg_programs (channel_tvg_name, start, stop, title, description) VALUES (?, ?, ?, ?, ?)",
+                          (str(db_id), start_t, stop_t, title_txt, desc_txt))
+                prog_el = ET.Element("programme", {"channel": str(db_id), "start": start_t, "stop": stop_t})
                 t_el = ET.SubElement(prog_el, "title")
                 t_el.text = title_txt
                 d_el = ET.SubElement(prog_el, "desc")
@@ -227,14 +146,11 @@ def build_combined_epg():
 
     conn.commit()
     conn.close()
-
-    # Write combined EPG.xml
     os.makedirs(MODIFIED_EPG_DIR, exist_ok=True)
     combined_epg_file = os.path.join(MODIFIED_EPG_DIR, "EPG.xml")
     tree = ET.ElementTree(combined_root)
     tree.write(combined_epg_file, encoding="utf-8", xml_declaration=True)
     print(f"[SUCCESS] Combined EPG saved as {combined_epg_file}")
-
 
 # ====================================================
 # 4) Update program data for a single channel

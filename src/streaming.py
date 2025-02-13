@@ -56,7 +56,7 @@ class SharedStream:
                     self.process.kill()
                 except Exception:
                     pass
-
+                
 def get_shared_stream(channel_id: int, stream_url: str) -> SharedStream:
     # Build your FFmpeg command.
     ffmpeg_cmd = [
