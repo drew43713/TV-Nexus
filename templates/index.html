@@ -6,100 +6,115 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>TV Nexus - Channel Manager</title>
     <style>
-      /* Navigation bar (tabs) styling */
-      nav {
-        background: #333;
-        display: flex;
-        justify-content: center;
-        margin-bottom: 20px;
-      }
-      nav a {
-        color: #fff;
-        padding: 10px 20px;
-        text-decoration: none;
-        font-weight: bold;
-      }
-      nav a:hover {
-        background: #444;
-      }
-      .active-tab {
-        border-bottom: 3px solid #ff0;
-      }
-      /* Global styles */
+      /* Modern UI Improvements */
       body {
-        font-family: Arial, sans-serif;
-        background-color: #f4f4f9;
-        color: #333;
+        font-family: "Poppins", sans-serif;
+        background: #1e1e2f;
+        color: #fff;
         margin: 0;
         padding: 20px;
       }
-      /* Search input styling */
+      
+      /* Navigation Bar */
+      nav {
+        position: sticky;
+        top: 0;
+        background: linear-gradient(90deg, #ff416c, #ff4b2b);
+        padding: 15px 0;
+        text-align: center;
+        display: flex;
+        justify-content: center;
+        box-shadow: 0px 4px 6px rgba(0, 0, 0, 0.3);
+      }
+      nav a {
+        color: #fff;
+        padding: 12px 24px;
+        text-decoration: none;
+        font-size: 18px;
+        font-weight: 600;
+        transition: all 0.3s;
+      }
+      nav a:hover,
+      .active-tab {
+        background: rgba(255, 255, 255, 0.2);
+        border-radius: 10px;
+      }
+      
+      /* Search Box for main channel list */
       #search-input {
         width: 100%;
-        padding: 10px;
-        margin-bottom: 20px;
-        border: 1px solid #ccc;
+        padding: 12px;
+        margin: 20px 0;
+        border-radius: 8px;
+        border: none;
         font-size: 16px;
+        background: #2a2a3a;
+        color: #fff;
       }
+      
+      /* Channel Table */
       table {
         width: 100%;
         border-collapse: collapse;
+        background: #2a2a3a;
+        border-radius: 10px;
+        overflow: hidden;
+        box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.3);
       }
       th,
       td {
-        padding: 10px;
-        border: 1px solid #ccc;
+        padding: 15px;
         text-align: center;
+        border-bottom: 1px solid #444;
       }
       th {
-        background-color: #f8f9fa;
+        background: #3a3a4a;
+        color: #ffcc00;
+        font-weight: bold;
         cursor: pointer;
       }
-      tr:nth-child(even) {
-        background-color: #f2f2f2;
+      tr:hover {
+        background: rgba(255, 255, 255, 0.1);
       }
-      /* Channel logo styling in table with a gray box behind */
+      
+      /* Channel Logo (in table) */
       img.channel-logo {
         max-height: 40px;
         width: auto;
-        cursor: pointer;
-        background-color: #e0e0e0;
+        background: #2a2a3a;
         padding: 2px;
-        border: 1px solid #ccc;
-        box-shadow: 0px 0px 3px rgba(0, 0, 0, 0.2);
+        border: 1px solid #444;
+        box-shadow: 0px 0px 5px rgba(0, 0, 0, 0.3);
+        cursor: pointer;
       }
+      
+      /* Input for Channel Number */
       input.channel-number {
         width: 50px;
         text-align: center;
-        border: 1px solid #ccc;
+        border-radius: 4px;
+        border: 1px solid #444;
         padding: 5px;
+        background: #2a2a3a;
+        color: #fff;
       }
-      button.edit-button,
-      button.probe-button,
-      button.save-all-button {
-        padding: 5px 10px;
+      
+      /* Buttons */
+      button {
+        background: linear-gradient(90deg, #ff416c, #ff4b2b);
+        border: none;
+        padding: 10px 15px;
+        color: #fff;
+        font-size: 14px;
+        border-radius: 6px;
         cursor: pointer;
+        transition: all 0.3s;
       }
-      /* Bulk activation styles */
-      #bulk-actions {
-        margin-bottom: 20px;
-        text-align: right;
+      button:hover {
+        opacity: 0.8;
       }
-      #bulk-actions button {
-        padding: 5px 10px;
-        margin-left: 5px;
-        cursor: pointer;
-      }
-      /* Add select-all checkbox styling in header */
-      th.active-header {
-        position: relative;
-      }
-      th.active-header input#select-all {
-        position: absolute;
-        top: 5px;
-        right: 5px;
-      }
-      /* Modal and overlay styles */
+      
+      /* Modal & Overlay */
       .modal,
       .logo-picker-modal {
         display: none;
@@ -107,44 +122,18 @@
         top: 50%;
         left: 50%;
         transform: translate(-50%, -50%);
-        background: white;
+        background: #2a2a3a;
         padding: 20px;
-        box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+        box-shadow: 0px 0px 15px rgba(0, 0, 0, 0.4);
+        border-radius: 8px;
+        text-align: center;
         z-index: 1000;
-        max-width: 90%;
+        width: 600px;      /* Force a wider modal */
+        max-width: 90vw;   /* Responsive fallback for small screens */
+        max-height: 80vh;
         overflow-y: auto;
       }
-      .modal-content,
-      .logo-picker-content {
-        text-align: center;
-      }
-      .modal img,
-      .logo-picker-modal img {
-        display: block;
-        margin: auto;
-      }
-      .modal h2 {
-        cursor: pointer;
-        margin: 0 0 10px 0;
-      }
-      .modal p#modal-category-text {
-        cursor: pointer;
-        font-size: 16px;
-        margin: 5px 0;
-      }
-      .modal img#modal-logo {
-        max-width: 150px;
-        cursor: pointer;
-        background-color: #e0e0e0;
-        padding: 5px;
-        border: 1px solid #ccc;
-        box-shadow: 0px 0px 3px rgba(0, 0, 0, 0.2);
-      }
-      .modal button,
-      .logo-picker-modal button {
-        margin-top: 10px;
-        padding: 5px 10px;
-      }
+      
       .overlay,
       .logo-picker-overlay {
         display: none;
@@ -156,7 +145,14 @@
         background: rgba(0, 0, 0, 0.5);
         z-index: 900;
       }
-      /* Loading overlay style */
+      
+      /* Make the logo picker scrollable if there are many logos */
+      .logo-picker-modal {
+        max-height: 80vh; /* So it won't exceed the viewport height */
+        overflow-y: auto; /* Enable scrolling inside the modal */
+      }
+      
+      /* Loading Overlay */
       #loading {
         display: none;
         position: fixed;
@@ -164,65 +160,52 @@
         left: 0;
         width: 100%;
         height: 100%;
-        background: rgba(255, 255, 255, 0.8);
-        z-index: 2000;
+        background: rgba(255, 255, 255, 0.1);
         text-align: center;
-        padding-top: 20%;
         font-size: 24px;
-        color: #333;
+        color: #fff;
+        padding-top: 20%;
+        z-index: 2000;
       }
-      /* Probe results area */
-      #probe-results {
-        margin-top: 15px;
-        text-align: left;
-        max-height: 200px;
-        overflow-y: auto;
-        border: 1px solid #ccc;
-        padding: 10px;
-        white-space: pre-wrap;
-        font-family: monospace;
-        font-size: 14px;
+      
+      /* Additional styling for modal content and inputs */
+      .modal-content,
+      .logo-picker-content {
+        text-align: center;
       }
-      /* EPG input styling */
+      .modal img,
+      .logo-picker-modal img {
+        display: block;
+        margin: 10px auto;
+      }
+      /* New CSS rule to ensure the modal logo scales down if it's large */
+      #modal-logo {
+        max-width: 100%;
+        max-height: 300px;
+        object-fit: contain;
+        display: block;
+        margin: 10px auto;
+      }
+      
       #epg-input {
         width: 90%;
         padding: 5px;
-        margin: 5px auto;
+        margin: 10px auto;
         display: block;
-        border: 1px solid #ccc;
+        border-radius: 4px;
+        border: 1px solid #444;
+        background: #1e1e2f;
+        color: #fff;
       }
-      /* Logo picker styles */
-      .logo-picker-modal {
-        max-width: 500px;
-        max-height: 80%;
-        overflow-y: auto;
-      }
-      .logo-picker-modal img {
-        margin: 5px;
-        height: 50px;
-        cursor: pointer;
-        border: 2px solid transparent;
-        box-shadow: 0px 0px 5px rgba(0, 0, 0, 0.3);
-        background-color: #e0e0e0;
-      }
-      .logo-picker-modal img.selected {
-        border-color: blue;
-      }
-      /* Logo search input in logo picker */
-      #logo-search {
-        width: 100%;
-        padding: 5px;
-        margin-bottom: 10px;
-        box-sizing: border-box;
-      }
-      /* Toggle button in modal for Active/Inactive status */
+      
+      /* Toggle Button for Active/Inactive Status */
       .toggle-btn {
         padding: 5px 10px;
-        cursor: pointer;
-        border: 1px solid #ccc;
+        border: 1px solid #444;
         border-radius: 4px;
-        background: #f0f0f0;
+        background: #2a2a3a;
         margin-left: 10px;
+        cursor: pointer;
       }
       .toggle-btn.active {
         background-color: #28a745;
@@ -234,35 +217,69 @@
         color: #fff;
         border-color: #dc3545;
       }
+      
+      /* Modal Button Overrides - Keep original size, add margin */
+      .modal button {
+        padding: 10px 15px;
+        font-size: 14px;
+        margin: 4px;
+      }
+      
+      /* --- Logo Picker Container / Search Bar --- */
+      /* Style the search box inside the logo picker */
+      #logo-search {
+        width: 80%;
+        padding: 12px;
+        margin: 10px 0;
+        border-radius: 8px;
+        border: none;
+        font-size: 16px;
+        background: #2a2a3a;
+        color: #fff;
+      }
+      
+      /* Use a grid layout for the logos */
+      #logo-picker-container {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+        gap: 16px;
+        justify-items: center;
+        width: 100%;
+        margin-top: 10px;
+      }
+      #logo-picker-container img {
+        margin: 0;
+        display: block;
+        max-width: 80px;
+        max-height: 80px;
+        object-fit: contain;
+        border-radius: 4px;
+        cursor: pointer;
+      }
     </style>
     <script>
       const BASE_URL = "{{ BASE_URL }}";
     </script>
   </head>
   <body>
-    <!-- TAB NAVIGATION: Channels (active), Settings -->
+    <!-- Navigation Bar -->
     <nav>
       <a href="/" class="active-tab">TV Nexus - Channels</a>
       <a href="/settings">TV Nexus - Settings</a>
     </nav>
-
-    <h1>TV Nexus Channel List</h1>
-
-    <!-- Search Field -->
-    <input
-      type="text"
-      id="search-input"
-      placeholder="Search channels..."
-      onkeyup="filterTable()"
-    />
-
+    
+    <h1 style="text-align: center; color: #ffcc00;">TV Nexus Channel List</h1>
+    
+    <!-- Search Input (for channel table) -->
+    <input type="text" id="search-input" placeholder="Search channels..." onkeyup="filterTable()" />
+    
     <!-- Auto-Numbering Section -->
     <div id="auto-numbering-section" style="margin-bottom:20px; text-align:right;">
       <label for="start_number">Auto-Number Channels Starting From: </label>
       <input type="number" id="start_number" name="start_number" min="1" required style="width:80px;" />
       <button id="auto-number-button" onclick="autoNumberChannels()">Renumber Channels</button>
     </div>
-
+    
     <!-- Channel List Table -->
     <table id="channels-table">
       <thead>
@@ -318,8 +335,8 @@
         {% endfor %}
       </tbody>
     </table>
-
-    <!-- Main Modal and overlay for editing channel details -->
+    
+    <!-- Main Modal and Overlay for Editing Channel Details -->
     <div class="overlay" id="overlay" onclick="closeModal()"></div>
     <div class="modal" id="modal">
       <div class="modal-content">
@@ -331,7 +348,6 @@
           <input type="number" id="modal-channel-number" value="" style="width:70px;"
                  onkeydown="handleEnter(event, this)" onblur="updateModalChannelNumber(this)" />
         </p>
-        <!-- New Active/Inactive toggle in modal -->
         <p>
           <strong>Status:</strong>
           <button id="modal-toggle-status" class="toggle-btn" type="button">Inactive</button>
@@ -354,25 +370,23 @@
         <button onclick="closeModal()">Close</button>
       </div>
     </div>
-
+    
     <!-- Logo Picker Overlay and Modal -->
-    <div class="logo-picker-overlay" id="logo-picker-overlay"
-         style="display:none; position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.5); z-index:1100;"
-         onclick="closeLogoPicker()"></div>
-    <div class="logo-picker-modal" id="logo-picker-modal"
-         style="display:none; position: fixed; top:50%; left:50%; transform: translate(-50%, -50%); background: #fff; padding: 20px; z-index:1200;">
+    <div class="logo-picker-overlay" id="logo-picker-overlay" onclick="closeLogoPicker()"></div>
+    <div class="logo-picker-modal" id="logo-picker-modal">
       <div class="logo-picker-content">
         <h3>Select a Logo</h3>
         <input type="text" id="logo-search" placeholder="Search logos by filename..." />
-        <div id="logo-picker-container" style="display: flex; flex-wrap: wrap; justify-content: center;"></div>
+        <!-- Constrained logos in this container -->
+        <div id="logo-picker-container"></div>
         <button onclick="closeLogoPicker()">Cancel</button>
       </div>
     </div>
-
+    
     <datalist id="category-list"></datalist>
-
+    
     <div id="loading">Please wait while the EPG updates...</div>
-
+    
     <!-- JavaScript Functions -->
     <script>
       let currentChannelId = null;
@@ -381,7 +395,7 @@
       let editedChannelName = "";
       let editedChannelCategory = "";
       let logoPickerTargetChannelId = null;
-
+      
       // Update active status and refresh the EPG data if activated.
       function updateActiveStatus(checkbox, channelId) {
         const active = checkbox.checked;
@@ -405,7 +419,7 @@
           })
           .catch(error => alert("Error updating active status: " + error));
       }
-
+      
       // Refresh the EPG data for a specific channel.
       function refreshChannelEpg(channelId) {
         const row = document.querySelector(`tr[data-channel="${channelId}"]`);
@@ -427,7 +441,7 @@
             }
           });
       }
-
+      
       function bulkUpdateActive(active) {
         const checkboxes = document.querySelectorAll(".active-checkbox");
         let selectedIds = [];
@@ -461,7 +475,7 @@
           })
           .catch(error => alert("Bulk update error: " + error));
       }
-
+      
       function toggleSelectAll(master) {
         const checkboxes = document.querySelectorAll(".active-checkbox");
         checkboxes.forEach(cb => {
@@ -470,7 +484,7 @@
           }
         });
       }
-
+      
       function openLogoPickerForChannel(channelId, currentLogo) {
         logoPickerTargetChannelId = channelId;
         selectedLogo = currentLogo;
@@ -487,7 +501,7 @@
           })
           .catch(error => console.error("Error fetching logos:", error));
       }
-
+      
       function openLogoPicker() {
         logoPickerTargetChannelId = null;
         fetch("/api/logos")
@@ -503,7 +517,7 @@
           })
           .catch(error => console.error("Error fetching logos:", error));
       }
-
+      
       function displayLogos(filterText) {
         const pickerContainer = document.getElementById("logo-picker-container");
         pickerContainer.innerHTML = "";
@@ -555,7 +569,7 @@
           }
         });
       }
-
+      
       document.addEventListener("DOMContentLoaded", function () {
         const logoSearchInput = document.getElementById("logo-search");
         if (logoSearchInput) {
@@ -564,7 +578,7 @@
           });
         }
         initEPGTypeAhead();
-
+      
         // Attach click event to modal toggle button for Active/Inactive status
         document.getElementById("modal-toggle-status").addEventListener("click", function () {
           let btn = this;
@@ -579,12 +593,12 @@
           }
         });
       });
-
+      
       function closeLogoPicker() {
         document.getElementById("logo-picker-overlay").style.display = "none";
         document.getElementById("logo-picker-modal").style.display = "none";
       }
-
+      
       function handleEditButtonClick(event, button) {
         event.stopPropagation();
         const row = button.closest("tr");
@@ -595,29 +609,29 @@
         const epgTitle = row.getAttribute("data-epg");
         const epgEntry = row.getAttribute("data-epg-entry");
         const streamUrl = row.getAttribute("data-stream-url");
-
+      
         currentChannelId = channelId;
         selectedLogo = currentLogoUrl;
         editedChannelName = channelName;
         editedChannelCategory = channelCategory;
-
+      
         const modalTitle = document.getElementById("modal-title");
         modalTitle.innerText = channelName;
         modalTitle.onclick = editChannelName;
-
+      
         const modalCategory = document.getElementById("modal-category-text");
         modalCategory.innerText = "Category: " + channelCategory;
         modalCategory.onclick = editChannelCategory;
-
+      
         document.getElementById("modal-logo").src = currentLogoUrl;
         document.getElementById("modal-channel-number").value = channelId;
         document.getElementById("modal-epg").innerText = epgTitle;
         document.getElementById("modal-stream-url").innerText = streamUrl;
         document.getElementById("modal-stream-url").href = streamUrl;
-
+      
         document.getElementById("epg-input").value = epgEntry || "";
         document.getElementById("probe-results").innerText = "";
-
+      
         // Initialize modal toggle button based on data-active attribute.
         let activeState = row.getAttribute("data-active");
         const toggleStatusBtn = document.getElementById("modal-toggle-status");
@@ -630,11 +644,11 @@
           toggleStatusBtn.classList.remove("active");
           toggleStatusBtn.classList.add("inactive");
         }
-
+      
         document.getElementById("modal").style.display = "block";
         document.getElementById("overlay").style.display = "block";
       }
-
+      
       function editChannelName() {
         const modalTitle = document.getElementById("modal-title");
         const currentName = modalTitle.innerText;
@@ -653,7 +667,7 @@
         input.focus();
         input.select();
       }
-
+      
       function saveChannelNameInline() {
         const input = document.getElementById("modal-channel-name-inline");
         if (!input) return;
@@ -665,7 +679,7 @@
         h2.onclick = editChannelName;
         input.parentNode.replaceChild(h2, input);
       }
-
+      
       function editChannelCategory() {
         const modalCategory = document.getElementById("modal-category-text");
         const currentCategory = modalCategory.innerText.replace(/^Category:\s*/, "");
@@ -686,7 +700,7 @@
         input.select();
         loadAvailableCategories();
       }
-
+      
       function loadAvailableCategories() {
         fetch("/api/categories")
           .then(response => response.json())
@@ -706,7 +720,7 @@
           })
           .catch(error => console.error("Error loading categories:", error));
       }
-
+      
       function saveChannelCategoryInline() {
         const input = document.getElementById("modal-category-inline");
         if (!input) return;
@@ -718,9 +732,9 @@
         p.onclick = editChannelCategory;
         input.parentNode.replaceChild(p, input);
       }
-
+      
       function updateModalChannelNumber(input) {}
-
+      
       function updateChannelNumber(input) {
         let oldValue = input.getAttribute("data-old-value");
         let newValue = input.value.trim();
@@ -744,7 +758,7 @@
             input.value = oldValue;
           });
       }
-
+      
       function saveAllChanges() {
         if (!currentChannelId) {
           alert("Channel ID not set.");
@@ -760,12 +774,12 @@
         formData.append("new_category", editedChannelCategory);
         formData.append("new_logo", selectedLogo);
         formData.append("new_epg_entry", epgEntry);
-
+      
         // Get the active status from modal toggle button.
         const toggleStatusBtn = document.getElementById("modal-toggle-status");
         const newActive = toggleStatusBtn.textContent.trim() === "Active" ? "1" : "0";
         formData.append("new_active", newActive);
-
+      
         fetch("/update_channel_properties", {
           method: "POST",
           body: formData,
@@ -788,7 +802,7 @@
             console.error("Error:", error);
           });
       }
-
+      
       function probeStream() {
         if (!currentChannelId) {
           alert("Channel ID not set");
@@ -806,18 +820,18 @@
             console.error("Error probing stream:", error);
           });
       }
-
+      
       function closeModal() {
         document.getElementById("modal").style.display = "none";
         document.getElementById("overlay").style.display = "none";
       }
-
+      
       function handleEnter(event, input) {
         if (event.key === "Enter") {
           input.blur();
         }
       }
-
+      
       function initEPGTypeAhead() {
         const epgInput = document.getElementById("epg-input");
         const dataList = document.getElementById("epg-list");
@@ -844,7 +858,7 @@
           dataList.innerHTML = "";
         });
       }
-
+      
       // Auto-numbering function
       function autoNumberChannels() {
         const startNumber = document.getElementById("start_number").value;
@@ -871,7 +885,7 @@
             alert("Request failed: " + error);
           });
       }
-
+      
       document.addEventListener("DOMContentLoaded", function () {
         const table = document.getElementById("channels-table");
         if (!table) return;
@@ -881,12 +895,12 @@
             sortTableByColumn(table, index);
           });
         });
-
+      
         function getCellValue(cell) {
           const input = cell.querySelector("input");
           return input ? input.value.trim() : cell.innerText.trim();
         }
-
+      
         function sortTableByColumn(table, columnIndex) {
           const tbody = table.querySelector("tbody");
           const rows = Array.from(tbody.querySelectorAll("tr"));
@@ -910,7 +924,7 @@
           rows.forEach(row => tbody.appendChild(row));
         }
       });
-
+      
       function filterTable() {
         const input = document.getElementById("search-input");
         const filter = input.value.toLowerCase();
@@ -930,7 +944,7 @@
         }
       }
     </script>
-
+    
     {{ js_script|safe }}
   </body>
 </html>

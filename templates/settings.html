@@ -1,62 +1,77 @@
 <!DOCTYPE html>
 <html lang="en">
   <head>
-    <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
-    <meta charset="UTF-8">
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>TV Nexus - Settings</title>
+    <link rel="icon" type="image/x-icon" href="/static/favicon.ico" />
+    <!-- Include Poppins font -->
+    <link
+      href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap"
+      rel="stylesheet"
+    />
     <style>
-      /* Navigation bar styling */
-      nav {
-        background: #333;
-        display: flex;
-        justify-content: center;
-        margin-bottom: 20px;
-      }
-      nav a {
-        color: #fff;
-        padding: 10px 20px;
-        text-decoration: none;
-        font-weight: bold;
-      }
-      nav a:hover {
-        background: #444;
-      }
-      .active-tab {
-        border-bottom: 3px solid #ff0;
-      }
+      /* Modern UI Improvements */
       body {
-        font-family: Arial, sans-serif;
-        background-color: #f4f4f9;
-        color: #333;
+        font-family: "Poppins", sans-serif;
+        background: #1e1e2f;
+        color: #fff;
         margin: 0;
         padding: 20px;
       }
-      h1 {
+
+      /* Navigation Bar */
+      nav {
+        position: sticky;
+        top: 0;
+        background: linear-gradient(90deg, #ff416c, #ff4b2b);
+        padding: 15px 0;
+        text-align: center;
+        display: flex;
+        justify-content: center;
+        box-shadow: 0px 4px 6px rgba(0, 0, 0, 0.3);
+        margin: 0; /* Remove any extra margin */
+      }
+      nav a {
+        color: #fff;
+        padding: 12px 24px;
+        text-decoration: none;
+        font-size: 18px;
+        font-weight: 600;
+        line-height: 1; /* Ensure the height matches the channel page */
+        transition: all 0.3s;
+      }
+      nav a:hover,
+      .active-tab {
+        background: rgba(255, 255, 255, 0.2);
+        border-radius: 10px;
+      }
+
+      /* Headings */
+      h1,
+      h2 {
         text-align: center;
       }
+      h1 {
+        color: #ffcc00;
+      }
+
+      /* Section container styling for settings elements */
       .section {
         width: 80%;
         margin: 20px auto;
         padding: 15px;
-        border: 1px solid #ccc;
-        background-color: #fff;
-        border-radius: 5px;
+        border: 1px solid #444;
+        background: #2a2a3a;
+        border-radius: 8px;
+        box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.3);
       }
       .section h2 {
-        text-align: center;
         margin-top: 0;
+        color: #ffcc00;
       }
-      .section ul {
-        list-style-type: none;
-        padding: 0;
-      }
-      .section li {
-        padding: 8px 5px;
-        border-bottom: 1px solid #ddd;
-      }
-      .section li:last-child {
-        border-bottom: none;
-      }
+
+      /* Config form styling */
       .config-form {
         text-align: center;
         margin-bottom: 10px;
@@ -65,28 +80,45 @@
       .config-form input[type="file"] {
         padding: 5px;
         margin-right: 10px;
+        border-radius: 4px;
+        border: 1px solid #444;
+        background: #2a2a3a;
+        color: #fff;
       }
       .config-form button {
-        padding: 5px 10px;
+        padding: 10px 15px;
+        background: linear-gradient(90deg, #ff416c, #ff4b2b);
+        border: none;
+        color: #fff;
+        font-size: 14px;
+        border-radius: 6px;
         cursor: pointer;
+        transition: all 0.3s;
       }
+      .config-form button:hover {
+        opacity: 0.8;
+      }
+
+      /* Confirmation message styling */
       .confirmation {
-        background-color: #dff0d8;
-        border: 1px solid #d0e9c6;
-        color: #3c763d;
+        background-color: rgba(40, 167, 69, 0.2);
+        border: 1px solid rgba(40, 167, 69, 0.5);
+        color: #28a745;
         padding: 10px;
         margin: 10px auto;
         width: 80%;
         text-align: center;
         border-radius: 5px;
       }
+
       /* Stream status styling */
       #stream-status {
-        background-color: #eef;
+        background: #2a2a3a;
         padding: 10px;
-        border: 1px solid #99c;
-        border-radius: 5px;
+        border: 1px solid #444;
+        border-radius: 8px;
         overflow-x: auto;
+        box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.3);
       }
       #stream-status table {
         width: 100%;
@@ -94,12 +126,13 @@
       }
       #stream-status th,
       #stream-status td {
-        border: 1px solid #ccc;
-        padding: 5px;
+        border: 1px solid #444;
+        padding: 8px;
         text-align: left;
       }
       #stream-status th {
-        background-color: #ddd;
+        background: #3a3a4a;
+        color: #ffcc00;
       }
     </style>
   </head>
@@ -131,10 +164,9 @@
     <!-- M3U Files Section (at the top) -->
     <div class="section">
       <h2>M3U File</h2>
-      <!-- Upload prompt above the file list -->
       <div class="config-form">
         <form action="/upload_m3u" method="post" enctype="multipart/form-data">
-          <input type="file" name="file" accept=".m3u" required>
+          <input type="file" name="file" accept=".m3u" required />
           <button type="submit">Upload M3U File</button>
         </form>
       </div>
@@ -150,10 +182,9 @@
     <!-- EPG Files Section -->
     <div class="section">
       <h2>EPG Files</h2>
-      <!-- Upload prompt above the file list -->
       <div class="config-form">
         <form action="/upload_epg" method="post" enctype="multipart/form-data">
-          <input type="file" name="file" accept=".xml,.xmltv,.gz" required>
+          <input type="file" name="file" accept=".xml,.xmltv,.gz" required />
           <button type="submit">Upload EPG File</button>
         </form>
       </div>
@@ -174,7 +205,7 @@
       <div class="config-form">
         <form action="/update_config" method="post">
           <label for="tuner_count">Number of Tuners:</label>
-          <input type="number" id="tuner_count" name="tuner_count" value="{{ tuner_count }}" min="1">
+          <input type="number" id="tuner_count" name="tuner_count" value="{{ tuner_count }}" min="1" />
           <button type="submit">Update</button>
         </form>
       </div>
@@ -245,12 +276,16 @@
                 let audioInfo = "N/A";
                 if (stream.probe_info && stream.probe_info.streams) {
                   const streams = stream.probe_info.streams;
-                  const videoStream = streams.find((s) => s.codec_type === "video");
+                  const videoStream = streams.find(
+                    (s) => s.codec_type === "video"
+                  );
                   if (videoStream) {
                     videoCodec = videoStream.codec_name;
                     resolution = videoStream.width + "x" + videoStream.height;
                   }
-                  const audioStream = streams.find((s) => s.codec_type === "audio");
+                  const audioStream = streams.find(
+                    (s) => s.codec_type === "audio"
+                  );
                   if (audioStream) {
                     audioInfo =
                       audioStream.codec_name +
