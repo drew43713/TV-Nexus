@@ -116,16 +116,17 @@ def lineup(request: Request):
     lineup_data = []
     for ch in rows:
         channel_number, ch_name, ch_url, logo_url = ch
+        channel_str = str(channel_number)
         if logo_url and logo_url.startswith("/"):
             full_logo_url = f"{base_url}{logo_url}"
         else:
             full_logo_url = logo_url or ""
         channel_obj = {
-            "GuideNumber": channel_number,
+            "GuideNumber": channel_str,
             "GuideName": ch_name,
-            "Station": channel_number,
+            "Station": channel_str,
             "Logo": full_logo_url,
-            "URL": f"{base_url}/tuner/{channel_number}"  # Note: If your tuner endpoint still uses the primary key,
+            "URL": f"{base_url}/tuner/{channel_str}"  # Note: If your tuner endpoint still uses the primary key,
                                                          # you may need to map channel_number to the corresponding id.
         }
         lineup_data.append(channel_obj)
