@@ -8,7 +8,6 @@ import re
 
 # Import BASE_URL (which your config builds with DOMAIN_NAME if available)
 from .config import EPG_DIR, MODIFIED_EPG_DIR, DB_FILE, BASE_URL
-from .database import swap_channel_ids  # if needed in this module, else remove
 
 # ====================================================
 # 1) Helper to parse/normalize XMLTV date/time
@@ -95,19 +94,26 @@ def build_combined_epg():
     print("[INFO] Building combined EPG from raw DB...")
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
+    # Remove old programme entries.
     c.execute("DELETE FROM epg_programs")
     combined_root = ET.Element("tv")
 
-    # Only include channels that are active.
-    c.execute("SELECT id, tvg_name, name, logo_url FROM channels WHERE active = 1")
+    # Query active channels using channel_number instead of id.
+    c.execute("""
+        SELECT channel_number, tvg_name, name, logo_url 
+          FROM channels 
+         WHERE active = 1 
+      ORDER BY channel_number
+    """)
     db_channels = c.fetchall()
 
-    for (db_id, db_tvg_name, db_name, db_logo) in db_channels:
+    for (channel_number, db_tvg_name, db_name, db_logo) in db_channels:
         db_tvg_name = db_tvg_name or ""
         db_name = db_name or ""
         db_logo = db_logo or ""
 
-        channel_el = ET.Element("channel", id=str(db_id))
+        # Use the channel_number as the id for the channel in the EPG.
+        channel_el = ET.Element("channel", id=str(channel_number))
         disp_el = ET.Element("display-name")
         disp_el.text = db_name
         channel_el.append(disp_el)
@@ -120,24 +126,44 @@ def build_combined_epg():
             channel_el.append(icon_el)
         combined_root.append(channel_el)
 
+        # Save channel name in epg_channels table (if needed).
         c.execute("INSERT OR IGNORE INTO epg_channels (name) VALUES (?)", (db_name,))
 
+        # Determine which raw channel IDs match this channel.
         raw_ids = []
         if db_tvg_name:
-            c.execute("SELECT DISTINCT raw_id FROM raw_epg_channels WHERE raw_id = ? OR display_name = ?",
-                      (db_tvg_name, db_tvg_name))
+            c.execute(
+                "SELECT DISTINCT raw_id FROM raw_epg_channels WHERE raw_id = ? OR display_name = ?",
+                (db_tvg_name, db_tvg_name)
+            )
             raw_ids = [r[0] for r in c.fetchall()]
         else:
-            c.execute("SELECT DISTINCT raw_id FROM raw_epg_channels WHERE display_name = ?", (db_name,))
+            c.execute(
+                "SELECT DISTINCT raw_id FROM raw_epg_channels WHERE display_name = ?",
+                (db_name,)
+            )
             raw_ids = [r[0] for r in c.fetchall()]
 
+        # For each matching raw channel, pull programmes.
         for rid in raw_ids:
-            c.execute("SELECT start, stop, title, description FROM raw_epg_programs WHERE raw_channel_id = ?", (rid,))
+            c.execute("""
+                SELECT start, stop, title, description 
+                  FROM raw_epg_programs 
+                 WHERE raw_channel_id = ?
+            """, (rid,))
             raw_progs = c.fetchall()
             for (start_t, stop_t, title_txt, desc_txt) in raw_progs:
-                c.execute("INSERT INTO epg_programs (channel_tvg_name, start, stop, title, description) VALUES (?, ?, ?, ?, ?)",
-                          (str(db_id), start_t, stop_t, title_txt, desc_txt))
-                prog_el = ET.Element("programme", {"channel": str(db_id), "start": start_t, "stop": stop_t})
+                # Insert into the epg_programs table using the channel_number.
+                c.execute("""
+                    INSERT INTO epg_programs (channel_tvg_name, start, stop, title, description)
+                    VALUES (?, ?, ?, ?, ?)
+                """, (str(channel_number), start_t, stop_t, title_txt, desc_txt))
+                # Build the programme XML element.
+                prog_el = ET.Element("programme", {
+                    "channel": str(channel_number),
+                    "start": start_t,
+                    "stop": stop_t
+                })
                 t_el = ET.SubElement(prog_el, "title")
                 t_el.text = title_txt
                 d_el = ET.SubElement(prog_el, "desc")

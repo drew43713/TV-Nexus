@@ -9,7 +9,7 @@ from fastapi.responses import (
 )
 import os
 from .config import DB_FILE, MODIFIED_EPG_DIR, EPG_DIR, HOST_IP, PORT, CUSTOM_LOGOS_DIR, LOGOS_DIR, TUNER_COUNT, load_config
-from .database import init_db, swap_channel_ids
+from .database import init_db, swap_channel_numbers
 from .epg import (
     update_modified_epg, update_channel_logo_in_epg, update_channel_metadata_in_epg,
     update_program_data_for_channel, parse_raw_epg_files, build_combined_epg
@@ -30,9 +30,12 @@ def get_base_url():
 
 @router.get("/", response_class=HTMLResponse)
 def web_interface(request: Request):
+    import datetime
+    import sqlite3
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-    c.execute("SELECT id, name, url, tvg_name, logo_url, group_title, active FROM channels ORDER BY id")
+    # Query active channels using channel_number for display and ordering.
+    c.execute("SELECT id, channel_number, name, url, tvg_name, logo_url, group_title, active FROM channels ORDER BY channel_number")
     channels = c.fetchall()
 
     epg_map = {}
@@ -41,21 +44,33 @@ def web_interface(request: Request):
     base_url = get_base_url()
     now = datetime.datetime.utcnow().strftime("%Y%m%d%H%M%S") + " +0000"
 
-    for ch in channels:
-        ch_id, ch_name, ch_url, ch_tvg_name, ch_logo, ch_group, ch_active = ch
+    # Note: Use channel_number (index 1) for EPG lookups instead of the primary key (index 0)
+    for channel in channels:
+        # Unpack columns: id, channel_number, name, url, tvg_name, logo_url, group_title, active
+        ch_id, ch_number, ch_name, ch_url, ch_tvg_name, ch_logo, ch_group, ch_active = channel
+
+        # Use ch_number (as string) for the EPG lookup, since that's what is stored in epg_programs.
         c.execute("""
             SELECT title, start, stop, description 
-            FROM epg_programs 
-            WHERE channel_tvg_name = ? AND start <= ? AND stop > ?
-            ORDER BY start DESC LIMIT 1
-        """, (str(ch_id), now, now))
+              FROM epg_programs 
+             WHERE channel_tvg_name = ? AND start <= ? AND stop > ?
+             ORDER BY start DESC LIMIT 1
+        """, (str(ch_number), now, now))
         program = c.fetchone()
         if program:
-            epg_map[str(ch_id)] = {"title": program[0], "start": program[1], "stop": program[2], "description": program[3]}
+            epg_map[str(ch_number)] = {
+                "title": program[0],
+                "start": program[1],
+                "stop": program[2],
+                "description": program[3]
+            }
         else:
-            epg_map[str(ch_id)] = None
-        epg_entry_map[str(ch_id)] = ch_tvg_name or ""
-        stream_map[str(ch_id)] = f"{base_url}/tuner/{ch_id}"
+            epg_map[str(ch_number)] = None
+
+        # Save the EPG entry identifier – here we assume the tvg_name field is replaced by channel_number.
+        epg_entry_map[str(ch_number)] = ch_tvg_name or ""
+        # Build the stream URL using the channel number (which now represents the channel's broadcast number)
+        stream_map[str(ch_number)] = f"{base_url}/tuner/{ch_number}"
     conn.close()
 
     js_script = ""
@@ -90,27 +105,28 @@ def discover(request: Request):
 @router.get("/lineup.json")
 def lineup(request: Request):
     base_url = get_base_url()
+    import sqlite3
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-    # Only include channels that are active.
-    c.execute("SELECT id, name, url, logo_url FROM channels WHERE active = 1")
+    # Select channel_number instead of the primary key for display purposes.
+    c.execute("SELECT channel_number, name, url, logo_url FROM channels WHERE active = 1 ORDER BY channel_number")
     rows = c.fetchall()
     conn.close()
 
     lineup_data = []
     for ch in rows:
-        ch_id, ch_name, ch_url, logo_url = ch
+        channel_number, ch_name, ch_url, logo_url = ch
         if logo_url and logo_url.startswith("/"):
             full_logo_url = f"{base_url}{logo_url}"
         else:
             full_logo_url = logo_url or ""
-        guide_number = str(ch_id)
         channel_obj = {
-            "GuideNumber": guide_number,
+            "GuideNumber": channel_number,
             "GuideName": ch_name,
-            "Station": guide_number,
+            "Station": channel_number,
             "Logo": full_logo_url,
-            "URL": f"{base_url}/tuner/{ch_id}"
+            "URL": f"{base_url}/tuner/{channel_number}"  # Note: If your tuner endpoint still uses the primary key,
+                                                         # you may need to map channel_number to the corresponding id.
         }
         lineup_data.append(channel_obj)
     return JSONResponse(lineup_data)
@@ -133,11 +149,12 @@ def serve_epg():
         return FileResponse(modified_epg_files[0], media_type="application/xml")
     return PlainTextResponse("<tv></tv>", media_type="application/xml")
 
-@router.get("/tuner/{channel_id}")
-def tuner_stream(channel_id: int, request: Request):
+@router.get("/tuner/{channel_number}")
+def tuner_stream(channel_number: int, request: Request):
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-    c.execute("SELECT url FROM channels WHERE id=? AND active=1", (channel_id,))
+    # Now use channel_number (not id) for lookup.
+    c.execute("SELECT url FROM channels WHERE channel_number=? AND active=1", (channel_number,))
     row = c.fetchone()
     conn.close()
     if not row:
@@ -145,8 +162,10 @@ def tuner_stream(channel_id: int, request: Request):
     stream_url = row[0]
     if not stream_url:
         raise HTTPException(status_code=404, detail="Invalid channel URL.")
-    shared = get_shared_stream(channel_id, stream_url)
+    # Use the channel_number as the key for the shared stream.
+    shared = get_shared_stream(channel_number, stream_url)
     subscriber_queue = shared.add_subscriber()
+    
     def streamer():
         try:
             while True:
@@ -159,17 +178,14 @@ def tuner_stream(channel_id: int, request: Request):
             from .streaming import streams_lock, shared_streams
             with streams_lock:
                 if not shared.subscribers:
-                    shared_streams.pop(channel_id, None)
+                    shared_streams.pop(channel_number, None)
     return StreamingResponse(streamer(), media_type="video/mp2t")
 
 @router.post("/update_channel_number")
 def update_channel_number(current_id: int = Form(...), new_id: int = Form(...)):
     if current_id == new_id:
         return RedirectResponse(url="/", status_code=303)
-    swap = swap_channel_ids(current_id, new_id)
-    update_modified_epg(current_id, new_id, swap)
-    clear_shared_stream(current_id)
-    clear_shared_stream(new_id)
+    swap = swap_channel_numbers(current_id, new_id)
     return RedirectResponse(url="/", status_code=303)
 
 # --- New endpoints for active/inactive state ---
@@ -355,50 +371,93 @@ def update_channel_properties(
     new_category: str = Form(...),
     new_logo: str = Form(...),
     new_epg_entry: str = Form(...),
-    new_active: int = Form(...)  # Accept active status (1 or 0)
+    new_active: int = Form(...)  # 1 for active, 0 for inactive
 ):
     try:
+        import sqlite3
         conn = sqlite3.connect(DB_FILE)
         c = conn.cursor()
-        # Retrieve the current epg entry and active status.
-        c.execute("SELECT tvg_name, active FROM channels WHERE id = ?", (channel_id,))
+        # Retrieve current tvg_name, active status, and channel_number.
+        c.execute("SELECT tvg_name, active, channel_number FROM channels WHERE id = ?", (channel_id,))
         row = c.fetchone()
         if not row:
             conn.close()
             return JSONResponse({"success": False, "error": "Channel not found."})
         old_epg_entry = row[0] if row[0] is not None else ""
-        old_active = row[1]  # Current active status from the database.
-        updated_channel_id = channel_id
-        if channel_id != new_channel_number:
-            swap = swap_channel_ids(channel_id, new_channel_number)
-            update_modified_epg(channel_id, new_channel_number, swap)
-            clear_shared_stream(channel_id)
-            clear_shared_stream(new_channel_number)
-            updated_channel_id = new_channel_number
-        # Update the channel record with the new values, including the active status.
+        old_active = row[1]
+        current_channel_number = row[2]
+        updated_channel_number = current_channel_number
+        if current_channel_number != new_channel_number:
+            swap = swap_channel_numbers(current_channel_number, new_channel_number)
+            updated_channel_number = new_channel_number
+
+        # Update the channel record with the new values.
         c.execute("""
             UPDATE channels 
-            SET name = ?, group_title = ?, logo_url = ?, tvg_name = ?, active = ?
+            SET name = ?, group_title = ?, logo_url = ?, tvg_name = ?, active = ?, channel_number = ?
             WHERE id = ?
-        """, (new_name, new_category, new_logo, new_epg_entry, new_active, updated_channel_id))
+        """, (new_name, new_category, new_logo, new_epg_entry, new_active, updated_channel_number, channel_id))
         conn.commit()
         conn.close()
-        # Regenerate EPG data if the EPG entry changed...
+
+        # Update EPG data as before.
         if new_epg_entry != old_epg_entry:
-            update_program_data_for_channel(updated_channel_id)
+            update_program_data_for_channel(channel_id)
         else:
-            update_channel_metadata_in_epg(updated_channel_id, new_name, new_logo)
-        # AND regenerate the EPG if the channel was switched from inactive to active.
+            update_channel_metadata_in_epg(channel_id, new_name, new_logo)
         if new_active == 1 and old_active == 0:
-            update_program_data_for_channel(updated_channel_id)
+            update_program_data_for_channel(channel_id)
         return JSONResponse({"success": True})
     except Exception as e:
         return JSONResponse({"success": False, "error": str(e)})
 
 @router.post("/auto_number_channels")
-def auto_number_channels(start_number: int = Form(...)):
-    """
+def auto_number_channels(
+    start_number: int = Form(...),
+    channel_ids: str = Form(...)  # Comma-separated list of filtered channel IDs from the UI.
+):
+    try:
+        import sqlite3
+        conn = sqlite3.connect(DB_FILE)
+        c = conn.cursor()
 
-    Some code here to auto-number channels.
+        # Parse filtered channel IDs from the form.
+        filtered_ids = [int(x.strip()) for x in channel_ids.split(",") if x.strip()]
+        if not filtered_ids:
+            return JSONResponse({"success": False, "message": "No channels provided."})
 
-    """
+        n = len(filtered_ids)
+        target_min = start_number
+        target_max = start_number + n - 1
+        TEMP_OFFSET = 1000000  # Used for bumping unfiltered channels
+
+        # Step 1: Temporarily assign filtered channels a value that cannot conflict.
+        # Here we use a negative value (assuming all valid channel_numbers are positive).
+        for ch_id in filtered_ids:
+            temp_value = -abs(ch_id)  # A guaranteed negative number unique to each channel.
+            c.execute("UPDATE channels SET channel_number = ? WHERE id = ?", (temp_value, ch_id))
+
+        # Step 2: For each unfiltered channel whose channel_number is in the target final range,
+        # bump its channel_number by TEMP_OFFSET.
+        placeholders = ",".join("?" for _ in filtered_ids)
+        c.execute(f"SELECT id, channel_number FROM channels WHERE id NOT IN ({placeholders})", filtered_ids)
+        unfiltered_channels = c.fetchall()
+        for ch_id, ch_num in unfiltered_channels:
+            if target_min <= ch_num <= target_max:
+                new_num = ch_num + TEMP_OFFSET
+                c.execute("UPDATE channels SET channel_number = ? WHERE id = ?", (new_num, ch_id))
+
+        # Step 3: Finally, assign the final sequential numbers to the filtered channels.
+        for i, ch_id in enumerate(filtered_ids):
+            final_number = start_number + i
+            c.execute("UPDATE channels SET channel_number = ? WHERE id = ?", (final_number, ch_id))
+
+        conn.commit()
+        conn.close()
+
+        # Rebuild the combined EPG file so that it reflects the new channel numbers.
+        build_combined_epg()
+
+        return JSONResponse({"success": True, "message": "Filtered channels renumbered successfully."})
+    except Exception as e:
+        return JSONResponse({"success": False, "message": str(e)})

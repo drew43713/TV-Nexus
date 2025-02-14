@@ -13,7 +13,7 @@ router = APIRouter()
 def stream_status():
     """
     Returns status for each active stream, including:
-      - channel_name: from the channels table
+      - channel_name: from the channels table (using channel_number)
       - subscriber_count: number of client subscribers
       - stream_url: input stream URL from the FFmpeg command
       - probe_info: technical info from ffprobe (codec, resolution, etc.)
@@ -22,20 +22,22 @@ def stream_status():
     """
     status = {}
     
-    # Build a dictionary mapping channel IDs (as strings) to channel names.
+    # Build a dictionary mapping channel numbers (as strings) to channel names.
     channel_names = {}
     try:
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
-        cursor.execute("SELECT id, name FROM channels")
+        # Now query channel_number instead of id.
+        cursor.execute("SELECT channel_number, name FROM channels")
         for row in cursor.fetchall():
+            # Use channel_number (converted to string) as key.
             channel_names[str(row[0])] = row[1]
         conn.close()
     except Exception as e:
         print("Error loading channel names:", e)
     
     with streams_lock:
-        for channel_id, shared in shared_streams.items():
+        for channel_number, shared in shared_streams.items():
             if not shared.is_running:
                 continue
             
@@ -65,22 +67,23 @@ def stream_status():
             except Exception as e:
                 probe_info = {"error": str(e)}
             
-            # Lookup channel name.
-            channel_name = channel_names.get(str(channel_id), "N/A")
+            # Lookup channel name using the channel_number (as string).
+            channel_name = channel_names.get(str(channel_number), "N/A")
             
-            # Query the current program for this channel.
+            # Query the current program for this channel using channel_number.
             current_program = None
             try:
                 now = datetime.datetime.utcnow().strftime("%Y%m%d%H%M%S") + " +0000"
                 conn = sqlite3.connect(DB_FILE)
                 cursor = conn.cursor()
+                # Use channel_number (as string) in the lookup; your build_combined_epg() stores this in channel_tvg_name.
                 cursor.execute("""
                     SELECT title, start, stop 
                     FROM epg_programs 
                     WHERE channel_tvg_name = ? AND start <= ? AND stop > ?
                     ORDER BY start DESC 
                     LIMIT 1
-                """, (str(channel_id), now, now))
+                """, (str(channel_number), now, now))
                 row = cursor.fetchone()
                 if row:
                     current_program = {"title": row[0], "start": row[1], "stop": row[2]}
@@ -88,7 +91,7 @@ def stream_status():
             except Exception as e:
                 current_program = {"error": str(e)}
             
-            status[channel_id] = {
+            status[str(channel_number)] = {
                 "channel_name": channel_name,
                 "subscriber_count": subscriber_count,
                 "stream_url": stream_url,

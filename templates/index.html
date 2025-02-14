@@ -128,8 +128,8 @@
         border-radius: 8px;
         text-align: center;
         z-index: 1000;
-        width: 600px;      /* Force a wider modal */
-        max-width: 90vw;   /* Responsive fallback for small screens */
+        width: 600px;
+        max-width: 90vw;
         max-height: 80vh;
         overflow-y: auto;
       }
@@ -146,10 +146,10 @@
         z-index: 900;
       }
       
-      /* Make the logo picker scrollable if there are many logos */
+      /* Logo Picker scrollable */
       .logo-picker-modal {
-        max-height: 80vh; /* So it won't exceed the viewport height */
-        overflow-y: auto; /* Enable scrolling inside the modal */
+        max-height: 80vh;
+        overflow-y: auto;
       }
       
       /* Loading Overlay */
@@ -168,7 +168,7 @@
         z-index: 2000;
       }
       
-      /* Additional styling for modal content and inputs */
+      /* Additional modal styling */
       .modal-content,
       .logo-picker-content {
         text-align: center;
@@ -178,7 +178,6 @@
         display: block;
         margin: 10px auto;
       }
-      /* New CSS rule to ensure the modal logo scales down if it's large */
       #modal-logo {
         max-width: 100%;
         max-height: 300px;
@@ -218,15 +217,14 @@
         border-color: #dc3545;
       }
       
-      /* Modal Button Overrides - Keep original size, add margin */
+      /* Modal Button Overrides */
       .modal button {
         padding: 10px 15px;
         font-size: 14px;
         margin: 4px;
       }
       
-      /* --- Logo Picker Container / Search Bar --- */
-      /* Style the search box inside the logo picker */
+      /* Logo Picker search bar */
       #logo-search {
         width: 80%;
         padding: 12px;
@@ -238,7 +236,7 @@
         color: #fff;
       }
       
-      /* Use a grid layout for the logos */
+      /* Logo Picker grid layout */
       #logo-picker-container {
         display: grid;
         grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
@@ -297,33 +295,39 @@
       </thead>
       <tbody>
         {% for channel in channels %}
+        <!-- 
+          channel[0] = id, channel[1] = channel_number, channel[2] = name, 
+          channel[5] = logo_url, channel[6] = group_title, channel[7] = active
+          Note: EPG mappings are now based on channel_number.
+        -->
         <tr data-channel="{{ channel[0] }}"
-            data-name="{{ channel[1] }}"
-            data-logo="{{ channel[4] }}"
-            data-category="{{ channel[5] }}"
-            data-active="{{ channel[6] }}"
-            data-epg="{% if channel[6] != 1 %}Channel Inactive{% elif channel[0]|string in epg_map and epg_map[channel[0]|string] %}{{ epg_map[channel[0]|string]['title'] }}{% else %}No Program{% endif %}"
-            data-epg-entry="{{ epg_entry_map[channel[0]|string] if channel[0]|string in epg_entry_map else 'Unknown' }}"
-            data-stream-url="{{ stream_map[channel[0]|string] if channel[0]|string in stream_map else 'N/A' }}">
+            data-channel-number="{{ channel[1] }}"
+            data-name="{{ channel[2] }}"
+            data-logo="{{ channel[5] }}"
+            data-category="{{ channel[6] }}"
+            data-active="{{ channel[7] }}"
+            data-epg="{% if channel[7] != 1 %}Channel Inactive{% elif channel[1]|string in epg_map and epg_map[channel[1]|string] %}{{ epg_map[channel[1]|string]['title'] }}{% else %}No Program{% endif %}"
+            data-epg-entry="{{ epg_entry_map[channel[1]|string] if channel[1]|string in epg_entry_map else 'Unknown' }}"
+            data-stream-url="{{ stream_map[channel[1]|string] if channel[1]|string in stream_map else 'N/A' }}">
           <td>
-            <input type="number" class="channel-number" value="{{ channel[0] }}" data-old-value="{{ channel[0] }}"
+            <input type="number" class="channel-number" value="{{ channel[1] }}" data-old-value="{{ channel[1] }}"
                    onblur="updateChannelNumber(this)" onkeydown="handleEnter(event, this)" />
           </td>
           <td>
-            <input type="checkbox" class="active-checkbox" {% if channel[6] == 1 %}checked{% endif %}
+            <input type="checkbox" class="active-checkbox" {% if channel[7] == 1 %}checked{% endif %}
                    onchange="updateActiveStatus(this, '{{ channel[0] }}')" />
           </td>
           <td>
-            <img src="{{ channel[4] }}" class="channel-logo"
-                 onclick="openLogoPickerForChannel('{{ channel[0] }}', '{{ channel[4] }}')" />
+            <img src="{{ channel[5] }}" class="channel-logo"
+                 onclick="openLogoPickerForChannel('{{ channel[0] }}', '{{ channel[5] }}')" />
           </td>
-          <td>{{ channel[1] }}</td>
-          <td>{{ channel[5] }}</td>
+          <td>{{ channel[2] }}</td>
+          <td>{{ channel[6] }}</td>
           <td>
-            {% if channel[6] != 1 %}
+            {% if channel[7] != 1 %}
             Channel Inactive
-            {% elif channel[0]|string in epg_map and epg_map[channel[0]|string] %}
-            {{ epg_map[channel[0]|string]['title'] }}
+            {% elif channel[1]|string in epg_map and epg_map[channel[1]|string] %}
+            {{ epg_map[channel[1]|string]['title'] }}
             {% else %}
             No Program
             {% endif %}
@@ -377,7 +381,6 @@
       <div class="logo-picker-content">
         <h3>Select a Logo</h3>
         <input type="text" id="logo-search" placeholder="Search logos by filename..." />
-        <!-- Constrained logos in this container -->
         <div id="logo-picker-container"></div>
         <button onclick="closeLogoPicker()">Cancel</button>
       </div>
@@ -399,6 +402,18 @@
       // Update active status and refresh the EPG data if activated.
       function updateActiveStatus(checkbox, channelId) {
         const active = checkbox.checked;
+        const row = document.querySelector(`tr[data-channel="${channelId}"]`);
+        
+        // Immediately update the row's data attribute and EPG cell
+        row.setAttribute("data-active", active ? "1" : "0");
+        if (active) {
+          row.cells[5].innerText = "Loading...";
+          refreshChannelEpg(channelId);
+        } else {
+          row.cells[5].innerText = "Channel Inactive";
+        }
+        
+        // Send the update to the server
         fetch("/update_channel_active", {
           method: "POST",
           headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -408,38 +423,37 @@
           .then(data => {
             if (!data.success) {
               alert("Failed to update active status");
-            } else {
-              if (active) {
-                refreshChannelEpg(channelId);
-              } else {
-                const row = document.querySelector(`tr[data-channel="${channelId}"]`);
-                if (row) row.cells[5].innerText = "Channel Inactive";
-              }
             }
           })
           .catch(error => alert("Error updating active status: " + error));
       }
       
-      // Refresh the EPG data for a specific channel.
+      // Poll for updated EPG data until it is available (or until max attempts reached).
       function refreshChannelEpg(channelId) {
         const row = document.querySelector(`tr[data-channel="${channelId}"]`);
-        if (row) {
-          row.cells[5].innerText = "Loading...";
-        }
-        fetch(`/api/current_program?channel_id=${channelId}`)
-          .then(response => response.json())
-          .then(data => {
-            let newEpgText = data.title ? data.title : "No Program";
-            if (row) {
-              row.cells[5].innerText = newEpgText;
-            }
-          })
-          .catch(error => {
-            console.error("Error refreshing EPG data for channel", channelId, error);
-            if (row) {
-              row.cells[5].innerText = "Error loading program";
-            }
-          });
+        let attempts = 0;
+        const maxAttempts = 10; // e.g., poll up to 10 times (~5 seconds if interval is 500ms)
+        const pollInterval = 500; // milliseconds
+        
+        const poller = setInterval(() => {
+          attempts++;
+          fetch(`/api/current_program?channel_id=${channelId}`, { cache: "no-cache" })
+            .then(response => response.json())
+            .then(data => {
+              let newEpgText = data.title ? data.title : "No Program";
+              if (row) {
+                row.cells[5].innerText = newEpgText;
+              }
+              // Stop polling if the program title is updated or if we've reached max attempts
+              if (newEpgText !== "Loading..." || attempts >= maxAttempts) {
+                clearInterval(poller);
+              }
+            })
+            .catch(error => {
+              console.error("Error refreshing EPG data for channel", channelId, error);
+              clearInterval(poller);
+            });
+        }, pollInterval);
       }
       
       function bulkUpdateActive(active) {
@@ -570,6 +584,47 @@
         });
       }
       
+      // This function collects all channel IDs from the visible table rows.
+      function getChannelIdsFromUI() {
+        const tableRows = document.querySelectorAll('#channels-table tbody tr');
+        let ids = [];
+        tableRows.forEach(row => {
+          if (row.style.display !== "none") {
+            ids.push(row.getAttribute("data-channel"));
+          }
+        });
+        return ids.join(",");
+      }
+      
+      // Auto-numbering function (updated to include channel_ids)
+      function autoNumberChannels() {
+        const startNumber = document.getElementById("start_number").value;
+        const channelIds = getChannelIdsFromUI();
+        if (!startNumber) {
+          alert("Please enter a valid starting number.");
+          return;
+        }
+        const formData = new FormData();
+        formData.append("start_number", startNumber);
+        formData.append("channel_ids", channelIds);
+        fetch("/auto_number_channels", {
+          method: "POST",
+          body: formData,
+        })
+          .then(response => response.json())
+          .then(data => {
+            if (data.success) {
+              alert("Channels renumbered successfully!");
+              window.location.reload();
+            } else {
+              alert("Error: " + data.message);
+            }
+          })
+          .catch(error => {
+            alert("Request failed: " + error);
+          });
+      }
+      
       document.addEventListener("DOMContentLoaded", function () {
         const logoSearchInput = document.getElementById("logo-search");
         if (logoSearchInput) {
@@ -579,7 +634,6 @@
         }
         initEPGTypeAhead();
       
-        // Attach click event to modal toggle button for Active/Inactive status
         document.getElementById("modal-toggle-status").addEventListener("click", function () {
           let btn = this;
           if (btn.textContent.trim() === "Active") {
@@ -603,6 +657,7 @@
         event.stopPropagation();
         const row = button.closest("tr");
         const channelId = row.getAttribute("data-channel");
+        const channelNumber = row.getAttribute("data-channel-number");
         const channelName = row.getAttribute("data-name");
         const currentLogoUrl = row.getAttribute("data-logo");
         const channelCategory = row.getAttribute("data-category");
@@ -624,7 +679,7 @@
         modalCategory.onclick = editChannelCategory;
       
         document.getElementById("modal-logo").src = currentLogoUrl;
-        document.getElementById("modal-channel-number").value = channelId;
+        document.getElementById("modal-channel-number").value = channelNumber;
         document.getElementById("modal-epg").innerText = epgTitle;
         document.getElementById("modal-stream-url").innerText = streamUrl;
         document.getElementById("modal-stream-url").href = streamUrl;
@@ -632,7 +687,6 @@
         document.getElementById("epg-input").value = epgEntry || "";
         document.getElementById("probe-results").innerText = "";
       
-        // Initialize modal toggle button based on data-active attribute.
         let activeState = row.getAttribute("data-active");
         const toggleStatusBtn = document.getElementById("modal-toggle-status");
         if (activeState === "1") {
@@ -775,7 +829,6 @@
         formData.append("new_logo", selectedLogo);
         formData.append("new_epg_entry", epgEntry);
       
-        // Get the active status from modal toggle button.
         const toggleStatusBtn = document.getElementById("modal-toggle-status");
         const newActive = toggleStatusBtn.textContent.trim() === "Active" ? "1" : "0";
         formData.append("new_active", newActive);
@@ -788,7 +841,6 @@
           .then(data => {
             if (data.success) {
               alert("Channel properties and EPG entry updated successfully!");
-              // If channel is activated, refresh its EPG data.
               if (newActive === "1") {
                 refreshChannelEpg(currentChannelId);
               }
@@ -857,33 +909,6 @@
         epgInput.addEventListener("change", () => {
           dataList.innerHTML = "";
         });
-      }
-      
-      // Auto-numbering function
-      function autoNumberChannels() {
-        const startNumber = document.getElementById("start_number").value;
-        if (!startNumber) {
-          alert("Please enter a valid starting number.");
-          return;
-        }
-        const formData = new FormData();
-        formData.append("start_number", startNumber);
-        fetch("/auto_number_channels", {
-          method: "POST",
-          body: formData,
-        })
-          .then(response => response.json())
-          .then(data => {
-            if (data.success) {
-              alert("Channels renumbered successfully!");
-              window.location.reload();
-            } else {
-              alert("Error: " + data.message);
-            }
-          })
-          .catch(error => {
-            alert("Request failed: " + error);
-          });
       }
       
       document.addEventListener("DOMContentLoaded", function () {

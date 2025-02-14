@@ -97,10 +97,7 @@ def load_m3u_files():
             if row:
                 channel_id, old_url, old_logo = row
                 default_logo = cache_logo(remote_logo, channel_identifier=key) if remote_logo else ""
-                if old_logo and old_logo != default_logo:
-                    tvg_logo_local = old_logo
-                else:
-                    tvg_logo_local = default_logo
+                tvg_logo_local = old_logo if old_logo and old_logo != default_logo else default_logo
                 if old_url != url or (old_logo != tvg_logo_local):
                     c.execute("""
                         UPDATE channels 
@@ -114,7 +111,10 @@ def load_m3u_files():
                     INSERT INTO channels (name, url, tvg_name, logo_url, group_title, active)
                     VALUES (?, ?, ?, ?, ?, ?)
                 """, (name_part, url, tvg_name, tvg_logo_local, group_title, 0))
-                print(f"[INFO] Inserted new channel '{key}' with logo. (Default inactive)")
+                new_id = c.lastrowid
+                # Assign the channel_number to be equal to the new primary key by default.
+                c.execute("UPDATE channels SET channel_number = ? WHERE id = ?", (new_id, new_id))
+                print(f"[INFO] Inserted new channel '{key}' with logo. (Default inactive, channel_number set to {new_id})")
             idx += 2
         else:
             idx += 1
