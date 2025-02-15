@@ -99,6 +99,16 @@
         opacity: 0.8;
       }
 
+      /* Scrollable EPG List */
+      .scrollable-list {
+        max-height: 120px;
+        overflow-y: auto;
+        padding: 5px;
+        background: #2a2a3a;
+        border-radius: 5px;
+        border: 1px solid #444;
+      }
+
       /* Confirmation message styling */
       .confirmation {
         background-color: rgba(40, 167, 69, 0.2);
@@ -189,11 +199,13 @@
         </form>
       </div>
       {% if epg_files %}
-      <ul>
-        {% for file in epg_files %}
-        <li>{{ file }}</li>
-        {% endfor %}
-      </ul>
+      <div class="scrollable-list">
+        <ul>
+          {% for file in epg_files %}
+          <li>{{ file }}</li>
+          {% endfor %}
+        </ul>
+      </div>
       {% else %}
       <p>No EPG files loaded.</p>
       {% endif %}
@@ -242,6 +254,15 @@
         }
         updateStreamStatus();
         setInterval(updateStreamStatus, 5000);
+
+        // Newly added snippet: auto-refresh page 3 seconds after any form submission.
+        document.querySelectorAll(".config-form form").forEach(form => {
+          form.addEventListener("submit", () => {
+            setTimeout(() => {
+              location.reload(); // Refresh page after submission
+            }, 3000);
+          });
+        });
       });
 
       function updateStreamStatus() {

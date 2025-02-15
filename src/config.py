@@ -21,6 +21,7 @@ DEFAULT_CONFIG = {
 
 # Ensure the config directory exists.
 os.makedirs("config", exist_ok=True)
+os.makedirs("config/schedulesdirect_cache", exist_ok=True)
 
 # Start with the default config.
 config = DEFAULT_CONFIG.copy()

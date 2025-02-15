@@ -96,11 +96,17 @@ def parse_raw_epg_files():
             # Process channel elements.
             for channel_el in root.findall("channel"):
                 raw_id = html.unescape(channel_el.get("id", "").strip())
-                disp_name_el = channel_el.find("display-name")
-                disp_name = ""
-                if disp_name_el is not None and disp_name_el.text:
-                    disp_name = html.unescape(disp_name_el.text.strip())
+                display_names = channel_el.findall("display-name")
+                if len(display_names) >= 2:
+                    abbreviation = html.unescape(display_names[0].text.strip()) if display_names[0].text else ""
+                    full_name = html.unescape(display_names[1].text.strip()) if display_names[1].text else ""
+                    disp_name = f"{full_name} ({abbreviation})" if full_name and abbreviation else full_name or abbreviation
+                elif len(display_names) == 1:
+                    disp_name = html.unescape(display_names[0].text.strip())
+                else:
+                    disp_name = ""
                 c.execute("INSERT INTO raw_epg_channels (raw_id, display_name) VALUES (?, ?)", (raw_id, disp_name))
+            
             # Process programme elements.
             for prog_el in root.findall("programme"):
                 raw_prog_channel = html.unescape(prog_el.get("channel", "").strip())
