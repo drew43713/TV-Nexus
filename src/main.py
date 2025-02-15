@@ -12,6 +12,8 @@ app = FastAPI()
 # Mount the static directory so that files in /static/ are served.
 app.mount("/static", StaticFiles(directory="static"), name="static")
 app.mount("/custom_logos", StaticFiles(directory=CUSTOM_LOGOS_DIR), name="custom_logos")
+app.mount("/schedulesdirect_cache", StaticFiles(directory="config/schedulesdirect_cache"), name="schedulesdirect_cache")
+
 
 # Include all routes.
 app.include_router(app_router)
