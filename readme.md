@@ -88,6 +88,8 @@ Follow these steps to integrate TV Nexus with Plex DVR:
 
 2. **Set Up Plex DVR:**  
    Click on **Set Up Plex DVR**. When prompted, choose to use a custom tuner.
+> **Note:**  
+> - If you are prompted to enter your postal code, you can choose to manually specify an epg file by clicking "Have an XMLTV guide on your server? Click here to use that instead." The server URL can be found below.
 
 3. **Enter Your TV Nexus Endpoints:**  
    - **Default URL:**  
