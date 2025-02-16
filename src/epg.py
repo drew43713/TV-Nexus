@@ -31,7 +31,7 @@ def parse_xmltv_datetime(dt_str):
     return utc_dt.strftime("%Y%m%d%H%M%S") + " +0000"
 
 # ====================================================
-# 2) Parse raw EPG files into 'raw_epg_*' tables (including icon)
+# 2) Parse raw EPG files into 'raw_epg_*' tables (including icon and source file)
 # ====================================================
 def parse_raw_epg_files():
     print("[INFO] Parsing raw EPG files...")
@@ -60,7 +60,7 @@ def parse_raw_epg_files():
         )
     ''')
     
-    # Create raw_epg_programs table with an extra icon_url column.
+    # Create raw_epg_programs table with an extra icon_url column and the new raw_epg_file column.
     c.execute('''
         CREATE TABLE IF NOT EXISTS raw_epg_programs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -69,7 +69,8 @@ def parse_raw_epg_files():
             stop TEXT,
             title TEXT,
             description TEXT,
-            icon_url TEXT
+            icon_url TEXT,
+            raw_epg_file TEXT
         )
     ''')
     
@@ -81,6 +82,13 @@ def parse_raw_epg_files():
             c.execute("ALTER TABLE raw_epg_programs ADD COLUMN icon_url TEXT")
         except Exception as e:
             print(f"[WARNING] Could not add icon_url column: {e}")
+    
+    # Ensure the raw_epg_file column exists (in case the table existed before).
+    if "raw_epg_file" not in columns:
+        try:
+            c.execute("ALTER TABLE raw_epg_programs ADD COLUMN raw_epg_file TEXT")
+        except Exception as e:
+            print(f"[WARNING] Could not add raw_epg_file column: {e}")
     
     for epg_file in epg_files:
         print(f"[INFO] Reading raw EPG: {epg_file}")
@@ -123,10 +131,11 @@ def parse_raw_epg_files():
                 icon_src = ""
                 if icon_el is not None:
                     icon_src = icon_el.get("src", "").strip()
+                # Insert the program with the source file information (using basename for clarity).
                 c.execute("""
-                    INSERT INTO raw_epg_programs (raw_channel_id, start, stop, title, description, icon_url)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                """, (raw_prog_channel, start_time, stop_time, title_text, desc_text, icon_src))
+                    INSERT INTO raw_epg_programs (raw_channel_id, start, stop, title, description, icon_url, raw_epg_file)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, (raw_prog_channel, start_time, stop_time, title_text, desc_text, icon_src, os.path.basename(epg_file)))
         except Exception as e:
             print(f"[ERROR] Parsing {epg_file} failed: {e}")
 

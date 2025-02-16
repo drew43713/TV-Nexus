@@ -31,10 +31,8 @@ def get_base_url():
 @router.get("/", response_class=HTMLResponse)
 def web_interface(request: Request):
     import datetime
-    import sqlite3
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-    # Query active channels using channel_number for display and ordering.
     c.execute("SELECT id, channel_number, name, url, tvg_name, logo_url, group_title, active FROM channels ORDER BY channel_number")
     channels = c.fetchall()
 
@@ -44,12 +42,8 @@ def web_interface(request: Request):
     base_url = get_base_url()
     now = datetime.datetime.utcnow().strftime("%Y%m%d%H%M%S") + " +0000"
 
-    # Note: Use channel_number (index 1) for EPG lookups instead of the primary key (index 0)
     for channel in channels:
-        # Unpack columns: id, channel_number, name, url, tvg_name, logo_url, group_title, active
         ch_id, ch_number, ch_name, ch_url, ch_tvg_name, ch_logo, ch_group, ch_active = channel
-
-        # Use ch_number (as string) for the EPG lookup, since that's what is stored in epg_programs.
         c.execute("""
             SELECT title, start, stop, description 
               FROM epg_programs 
@@ -67,9 +61,7 @@ def web_interface(request: Request):
         else:
             epg_map[str(ch_number)] = None
 
-        # Save the EPG entry identifier – here we assume the tvg_name field is replaced by channel_number.
         epg_entry_map[str(ch_number)] = ch_tvg_name or ""
-        # Build the stream URL using the channel number (which now represents the channel's broadcast number)
         stream_map[str(ch_number)] = f"{base_url}/tuner/{ch_number}"
     conn.close()
 
@@ -259,22 +251,41 @@ def update_channel_category(channel_id: int = Form(...), new_category: str = For
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/api/epg_entries")
-def get_epg_entries(search: str = Query("", min_length=0)):
+def get_epg_entries(search: str = Query("", min_length=0), raw_file: str = Query("", min_length=0)):
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     if search:
-        c.execute("""
-            SELECT DISTINCT display_name
-            FROM raw_epg_channels
-            WHERE LOWER(display_name) LIKE LOWER(?)
-            ORDER BY display_name
-        """, (f"%{search.lower()}%",))
+        if raw_file:
+            c.execute("""
+                SELECT DISTINCT rec.display_name
+                FROM raw_epg_channels rec
+                JOIN raw_epg_programs rep ON rep.raw_channel_id = rec.raw_id
+                WHERE LOWER(rec.display_name) LIKE LOWER(?)
+                  AND rep.raw_epg_file = ?
+                ORDER BY rec.display_name
+            """, (f"%{search.lower()}%", raw_file))
+        else:
+            c.execute("""
+                SELECT DISTINCT display_name
+                FROM raw_epg_channels
+                WHERE LOWER(display_name) LIKE LOWER(?)
+                ORDER BY display_name
+            """, (f"%{search.lower()}%",))
     else:
-        c.execute("""
-            SELECT DISTINCT display_name
-            FROM raw_epg_channels
-            ORDER BY display_name
-        """)
+        if raw_file:
+            c.execute("""
+                SELECT DISTINCT rec.display_name
+                FROM raw_epg_channels rec
+                JOIN raw_epg_programs rep ON rep.raw_channel_id = rec.raw_id
+                WHERE rep.raw_epg_file = ?
+                ORDER BY rec.display_name
+            """, (raw_file,))
+        else:
+            c.execute("""
+                SELECT DISTINCT display_name
+                FROM raw_epg_channels
+                ORDER BY display_name
+            """)
     rows = c.fetchall()
     conn.close()
     results = [row[0] for row in rows if row[0]]
@@ -462,3 +473,21 @@ def auto_number_channels(
         return JSONResponse({"success": True, "message": "Filtered channels renumbered successfully."})
     except Exception as e:
         return JSONResponse({"success": False, "message": str(e)})
+
+@router.get("/api/epg_filenames")
+def get_epg_filenames():
+    """
+    Return a list of distinct raw EPG filenames.
+    """
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("""
+        SELECT DISTINCT raw_epg_file
+        FROM raw_epg_programs
+        WHERE raw_epg_file IS NOT NULL AND raw_epg_file != ''
+        ORDER BY raw_epg_file
+    """)
+    rows = c.fetchall()
+    conn.close()
+    filenames = [row[0] for row in rows]
+    return JSONResponse(filenames)

@@ -5,8 +5,10 @@ from .config import DB_FILE
 def init_db():
     """
     Initialize or upgrade the database schema:
-      - Create or update the 'channels' table with a new 'channel_number' column.
-      - Create/upgrade the 'epg_programs', 'epg_channels', 'raw_epg_channels' and 'raw_epg_programs' tables.
+      - Creates/updates the 'channels' table (with channel_number).
+      - Creates/updates the 'epg_programs' and 'epg_channels' tables.
+      - Creates/updates the 'raw_epg_channels' and 'raw_epg_programs' tables,
+        including the new 'raw_epg_file' column in raw_epg_programs.
     """
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
@@ -30,7 +32,6 @@ def init_db():
     columns = [col_info[1] for col_info in c.fetchall()]
     if "channel_number" not in columns:
         try:
-            # Add the column without a UNIQUE constraint.
             c.execute("ALTER TABLE channels ADD COLUMN channel_number INTEGER")
         except sqlite3.OperationalError as e:
             print("Error adding channel_number column:", e)
@@ -75,7 +76,7 @@ def init_db():
         )
     ''')
 
-    # Create raw_epg_programs table.
+    # Create raw_epg_programs table with the new raw_epg_file column.
     c.execute('''
         CREATE TABLE IF NOT EXISTS raw_epg_programs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -83,7 +84,9 @@ def init_db():
             start TEXT,
             stop TEXT,
             title TEXT,
-            description TEXT
+            description TEXT,
+            icon_url TEXT,
+            raw_epg_file TEXT
         )
     ''')
 

@@ -144,7 +144,31 @@
         background: #3a3a4a;
         color: #ffcc00;
       }
+
+      /* Modal logo constrained */
+      #modal-logo {
+        max-width: 200px;
+        max-height: 200px;
+        object-fit: contain;
+        display: block;
+        margin: 10px auto;
+      }
+
+      /* Scrollable probe results box */
+      #probe-results {
+        max-height: 200px;
+        overflow-y: auto;
+        background: #333;
+        padding: 10px;
+        border: 1px solid #444;
+        text-align: left;
+        white-space: pre-wrap;
+        margin: 10px auto;
+      }
     </style>
+    <script>
+      const BASE_URL = "{{ BASE_URL }}";
+    </script>
   </head>
   <body>
     <!-- Navigation -->
@@ -155,6 +179,7 @@
 
     <h1>TV Nexus Settings</h1>
 
+    <!-- Confirmation banners -->
     {% if updated %}
     <div class="confirmation" id="confirmation-message">
       Configuration updated successfully!
@@ -168,6 +193,11 @@
     {% if m3u_upload_success %}
     <div class="confirmation" id="m3u-upload-confirmation">
       M3U file uploaded successfully!
+    </div>
+    {% endif %}
+    {% if parse_epg_success %}
+    <div class="confirmation" id="parse-epg-confirmation">
+      EPG files parsed successfully!
     </div>
     {% endif %}
 
@@ -198,6 +228,12 @@
           <button type="submit">Upload EPG File</button>
         </form>
       </div>
+      <!-- New button to trigger parsing of EPG files using AJAX -->
+      <div class="config-form">
+        <button id="parse-epg-button" onclick="parseEPG()">Parse EPG Files</button>
+      </div>
+      <!-- Status message for EPG parsing -->
+      <div class="confirmation" id="parse-epg-status" style="display: none;"></div>
       {% if epg_files %}
       <div class="scrollable-list">
         <ul>
@@ -232,6 +268,9 @@
     </div>
 
     <script>
+      // Global flag to pause stream status updates during EPG parsing.
+      let epgParsingInProgress = false;
+
       // Hide confirmation messages after 5 seconds.
       setTimeout(() => {
         const conf = document.getElementById("confirmation-message");
@@ -240,6 +279,8 @@
         if (epgConf) epgConf.style.display = "none";
         const m3uConf = document.getElementById("m3u-upload-confirmation");
         if (m3uConf) m3uConf.style.display = "none";
+        const parseEpgConf = document.getElementById("parse-epg-confirmation");
+        if (parseEpgConf) parseEpgConf.style.display = "none";
       }, 5000);
 
       // Remove query parameters from URL after page load.
@@ -248,24 +289,27 @@
         if (
           urlParams.has("updated") ||
           urlParams.has("epg_upload_success") ||
-          urlParams.has("m3u_upload_success")
+          urlParams.has("m3u_upload_success") ||
+          urlParams.has("parse_epg_success")
         ) {
           window.history.replaceState({}, document.title, "/settings");
         }
         updateStreamStatus();
         setInterval(updateStreamStatus, 5000);
 
-        // Newly added snippet: auto-refresh page 3 seconds after any form submission.
+        // Auto-refresh page 3 seconds after any form submission.
         document.querySelectorAll(".config-form form").forEach(form => {
           form.addEventListener("submit", () => {
             setTimeout(() => {
-              location.reload(); // Refresh page after submission
+              location.reload();
             }, 3000);
           });
         });
       });
 
       function updateStreamStatus() {
+        // If EPG parsing is in progress, skip updating stream status.
+        if (epgParsingInProgress) return;
         fetch("/api/stream_status")
           .then((response) => response.json())
           .then((data) => {
@@ -335,6 +379,41 @@
           .catch((error) => {
             document.getElementById("stream-status-content").innerHTML =
               "<p>Error fetching stream status: " + error + "</p>";
+          });
+      }
+
+      // Asynchronous function to parse EPG files
+      function parseEPG() {
+        const parseButton = document.getElementById("parse-epg-button");
+        parseButton.disabled = true;
+        epgParsingInProgress = true;
+        const statusEl = document.getElementById("parse-epg-status");
+        statusEl.innerText = "Parsing EPG files... please wait.";
+        statusEl.style.display = "block";
+
+        fetch("/parse_epg", { method: "POST" })
+          .then(response => {
+            if (!response.ok) {
+              throw new Error("Failed to parse EPG files.");
+            }
+            return response.json();
+          })
+          .then(data => {
+            if (data.success) {
+              statusEl.innerText = data.message;
+            } else {
+              statusEl.innerText = "Error: " + data.message;
+            }
+            epgParsingInProgress = false;
+            setTimeout(() => {
+              statusEl.style.display = "none";
+              location.reload();
+            }, 3000);
+          })
+          .catch(error => {
+            statusEl.innerText = "Error parsing EPG files: " + error.message;
+            epgParsingInProgress = false;
+            parseButton.disabled = false;
           });
       }
     </script>

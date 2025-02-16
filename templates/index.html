@@ -178,9 +178,10 @@
         display: block;
         margin: 10px auto;
       }
+      /* Constrain modal logo size */
       #modal-logo {
-        max-width: 100%;
-        max-height: 300px;
+        max-width: 200px;
+        max-height: 200px;
         object-fit: contain;
         display: block;
         margin: 10px auto;
@@ -253,6 +254,29 @@
         object-fit: contain;
         border-radius: 4px;
         cursor: pointer;
+      }
+      
+      /* New dropdown styling for raw file filter */
+      select#raw-file-filter {
+        width: 90%;
+        padding: 5px;
+        margin: 10px auto;
+        border-radius: 4px;
+        border: 1px solid #444;
+        background: #1e1e2f;
+        color: #fff;
+      }
+      
+      /* Scrollable probe results box */
+      #probe-results {
+        max-height: 200px;
+        overflow-y: auto;
+        background: #333;
+        padding: 10px;
+        border: 1px solid #444;
+        text-align: left;
+        white-space: pre-wrap;
+        margin: 10px auto;
       }
     </style>
     <script>
@@ -363,12 +387,20 @@
           <strong>Stream URL:</strong>
           <a id="modal-stream-url" href="#" target="_blank">Click to Stream</a>
         </p>
+        <!-- NEW: Dropdown to filter raw EPG channels by file -->
+        <p>
+          <strong>Filter by EPG Source File:</strong>
+          <select id="raw-file-filter">
+            <option value="">All Files</option>
+          </select>
+        </p>
         <p>
           <label for="epg-input"><strong>Select EPG Entry:</strong></label>
           <input type="text" id="epg-input" placeholder="Type to search..." list="epg-list" />
           <datalist id="epg-list"></datalist>
         </p>
         <button class="probe-button" onclick="probeStream()">Probe Stream</button>
+        <!-- Probe results appear in a scrollable box -->
         <div id="probe-results"></div>
         <button class="save-all-button" onclick="saveAllChanges()">Save Changes</button>
         <button onclick="closeModal()">Close</button>
@@ -399,12 +431,26 @@
       let editedChannelCategory = "";
       let logoPickerTargetChannelId = null;
       
+      // Toggle the active/inactive state in the modal
+      document.addEventListener("DOMContentLoaded", function () {
+        const toggleStatusBtn = document.getElementById("modal-toggle-status");
+        toggleStatusBtn.addEventListener("click", function () {
+          if (this.textContent.trim() === "Active") {
+            this.textContent = "Inactive";
+            this.classList.remove("active");
+            this.classList.add("inactive");
+          } else {
+            this.textContent = "Active";
+            this.classList.remove("inactive");
+            this.classList.add("active");
+          }
+        });
+      });
+      
       // Update active status and refresh the EPG data if activated.
       function updateActiveStatus(checkbox, channelId) {
         const active = checkbox.checked;
         const row = document.querySelector(`tr[data-channel="${channelId}"]`);
-        
-        // Immediately update the row's data attribute and EPG cell
         row.setAttribute("data-active", active ? "1" : "0");
         if (active) {
           row.cells[5].innerText = "Loading...";
@@ -412,8 +458,6 @@
         } else {
           row.cells[5].innerText = "Channel Inactive";
         }
-        
-        // Send the update to the server
         fetch("/update_channel_active", {
           method: "POST",
           headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -428,13 +472,12 @@
           .catch(error => alert("Error updating active status: " + error));
       }
       
-      // Poll for updated EPG data until it is available (or until max attempts reached).
+      // Poll for updated EPG data until it is available.
       function refreshChannelEpg(channelId) {
         const row = document.querySelector(`tr[data-channel="${channelId}"]`);
         let attempts = 0;
-        const maxAttempts = 10; // e.g., poll up to 10 times (~5 seconds if interval is 500ms)
-        const pollInterval = 500; // milliseconds
-        
+        const maxAttempts = 10;
+        const pollInterval = 500;
         const poller = setInterval(() => {
           attempts++;
           fetch(`/api/current_program?channel_id=${channelId}`, { cache: "no-cache" })
@@ -444,7 +487,6 @@
               if (row) {
                 row.cells[5].innerText = newEpgText;
               }
-              // Stop polling if the program title is updated or if we've reached max attempts
               if (newEpgText !== "Loading..." || attempts >= maxAttempts) {
                 clearInterval(poller);
               }
@@ -596,7 +638,6 @@
         return ids.join(",");
       }
       
-      // Auto-numbering function (updated to include channel_ids)
       function autoNumberChannels() {
         const startNumber = document.getElementById("start_number").value;
         const channelIds = getChannelIdsFromUI();
@@ -625,32 +666,75 @@
           });
       }
       
-      document.addEventListener("DOMContentLoaded", function () {
-        const logoSearchInput = document.getElementById("logo-search");
-        if (logoSearchInput) {
-          logoSearchInput.addEventListener("keyup", function () {
-            displayLogos(this.value);
-          });
-        }
-        initEPGTypeAhead();
+      // Load raw file options for the new dropdown.
+      function loadRawFileOptions() {
+        fetch("/api/epg_filenames")
+          .then(response => response.json())
+          .then(filenames => {
+            const select = document.getElementById("raw-file-filter");
+            select.innerHTML = '<option value="">All Files</option>';
+            filenames.forEach(fn => {
+              const option = document.createElement("option");
+              option.value = fn;
+              option.textContent = fn;
+              select.appendChild(option);
+            });
+          })
+          .catch(error => console.error("Error fetching raw file list:", error));
+      }
       
-        document.getElementById("modal-toggle-status").addEventListener("click", function () {
-          let btn = this;
-          if (btn.textContent.trim() === "Active") {
-            btn.textContent = "Inactive";
-            btn.classList.remove("active");
-            btn.classList.add("inactive");
-          } else {
-            btn.textContent = "Active";
-            btn.classList.remove("inactive");
-            btn.classList.add("active");
+      // Update the EPG typeahead to include the raw file filter.
+      function initEPGTypeAhead() {
+        const epgInput = document.getElementById("epg-input");
+        const dataList = document.getElementById("epg-list");
+        if (!epgInput || !dataList) return;
+        epgInput.addEventListener("input", function () {
+          dataList.innerHTML = "";
+          const searchTerm = epgInput.value.trim();
+          if (searchTerm.length < 2) {
+            return;
           }
+          const rawFile = document.getElementById("raw-file-filter").value;
+          const url = `/api/epg_entries?search=${encodeURIComponent(searchTerm)}&raw_file=${encodeURIComponent(rawFile)}`;
+          fetch(url)
+            .then(response => response.json())
+            .then(entries => {
+              dataList.innerHTML = "";
+              entries.forEach(name => {
+                const option = document.createElement("option");
+                option.value = name;
+                dataList.appendChild(option);
+              });
+            })
+            .catch(err => console.error("Error fetching EPG entries:", err));
         });
-      });
+        epgInput.addEventListener("change", () => {
+          dataList.innerHTML = "";
+        });
+        // Also re-query when the raw file dropdown value changes.
+        document.getElementById("raw-file-filter").addEventListener("change", function () {
+          const event = new Event('input');
+          epgInput.dispatchEvent(event);
+        });
+      }
       
-      function closeLogoPicker() {
-        document.getElementById("logo-picker-overlay").style.display = "none";
-        document.getElementById("logo-picker-modal").style.display = "none";
+      // When the modal opens, load raw file options and initialize typeahead.
+      function openModal() {
+        loadRawFileOptions();
+        initEPGTypeAhead();
+        document.getElementById("modal").style.display = "block";
+        document.getElementById("overlay").style.display = "block";
+      }
+      
+      function closeModal() {
+        document.getElementById("modal").style.display = "none";
+        document.getElementById("overlay").style.display = "none";
+      }
+      
+      function handleEnter(event, input) {
+        if (event.key === "Enter") {
+          input.blur();
+        }
       }
       
       function handleEditButtonClick(event, button) {
@@ -699,8 +783,8 @@
           toggleStatusBtn.classList.add("inactive");
         }
       
-        document.getElementById("modal").style.display = "block";
-        document.getElementById("overlay").style.display = "block";
+        // Open the modal and load raw file options.
+        openModal();
       }
       
       function editChannelName() {
@@ -871,44 +955,6 @@
             probeDiv.innerText = "Error probing stream: " + error;
             console.error("Error probing stream:", error);
           });
-      }
-      
-      function closeModal() {
-        document.getElementById("modal").style.display = "none";
-        document.getElementById("overlay").style.display = "none";
-      }
-      
-      function handleEnter(event, input) {
-        if (event.key === "Enter") {
-          input.blur();
-        }
-      }
-      
-      function initEPGTypeAhead() {
-        const epgInput = document.getElementById("epg-input");
-        const dataList = document.getElementById("epg-list");
-        if (!epgInput || !dataList) return;
-        epgInput.addEventListener("input", function () {
-          dataList.innerHTML = "";
-          const searchTerm = epgInput.value.trim();
-          if (searchTerm.length < 2) {
-            return;
-          }
-          fetch(`/api/epg_entries?search=${encodeURIComponent(searchTerm)}`)
-            .then(response => response.json())
-            .then(entries => {
-              dataList.innerHTML = "";
-              entries.forEach(name => {
-                const option = document.createElement("option");
-                option.value = name;
-                dataList.appendChild(option);
-              });
-            })
-            .catch(err => console.error("Error fetching EPG entries:", err));
-        });
-        epgInput.addEventListener("change", () => {
-          dataList.innerHTML = "";
-        });
       }
       
       document.addEventListener("DOMContentLoaded", function () {

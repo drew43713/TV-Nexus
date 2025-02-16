@@ -13,7 +13,9 @@ templates = Jinja2Templates(directory="templates")
 @router.get("/settings", response_class=HTMLResponse)
 def settings_page(request: Request):
     # List EPG files.
-    epg_files = sorted([f for f in os.listdir(EPG_DIR) if f.lower().endswith((".xml", ".xmltv", ".gz"))]) if os.path.exists(EPG_DIR) else []
+    epg_files = sorted(
+        [f for f in os.listdir(EPG_DIR) if f.lower().endswith((".xml", ".xmltv", ".gz"))]
+    ) if os.path.exists(EPG_DIR) else []
     
     # Find the first (and only) M3U file.
     m3u_file = None
@@ -35,6 +37,7 @@ def settings_page(request: Request):
     updated = request.query_params.get("updated", None)
     epg_upload_success = request.query_params.get("epg_upload_success", None)
     m3u_upload_success = request.query_params.get("m3u_upload_success", None)
+    parse_epg_success = request.query_params.get("parse_epg_success", None)
     
     return templates.TemplateResponse("settings.html", {
         "request": request,
@@ -43,7 +46,8 @@ def settings_page(request: Request):
         "tuner_count": tuner_count,
         "updated": updated,
         "epg_upload_success": epg_upload_success,
-        "m3u_upload_success": m3u_upload_success
+        "m3u_upload_success": m3u_upload_success,
+        "parse_epg_success": parse_epg_success,
     })
 
 @router.post("/update_config")
@@ -120,3 +124,16 @@ async def upload_m3u(file: UploadFile = File(...)):
     load_m3u_files()
     
     return RedirectResponse(url="/settings?m3u_upload_success=true", status_code=303)
+
+@router.post("/parse_epg")
+def parse_epg():
+    """
+    Endpoint to re-parse all raw EPG files and rebuild the combined EPG.
+    Returns a JSON response with success and message keys.
+    """
+    try:
+        parse_raw_epg_files()
+        build_combined_epg()
+        return {"success": True, "message": "EPG parsed successfully."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
