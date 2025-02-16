@@ -1,6 +1,3 @@
-Below is a complete updated `README.md` file in Markdown format. It includes your original content and updates the "Integrating with Plex" section according to the latest Plex Live TV & DVR instructions from the [Plex support article](https://support.plex.tv/articles/225877347-live-tv-dvr/).
-
-```markdown
 # TV Nexus - IPTV Server
 
 TV Nexus is an IPTV server implementation using FastAPI, enabling users to manage IPTV playlists (M3U files) and Electronic Program Guide (EPG) data while providing stream remuxing for compatibility with Plex and other IPTV clients.
@@ -146,5 +143,3 @@ Contributions are welcome! Please fork this repository and submit pull requests 
 
 This project is licensed under the **MIT License**. See the [LICENSE](LICENSE) file for details.
 ```
-
----
