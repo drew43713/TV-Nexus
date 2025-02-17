@@ -446,6 +446,11 @@
             this.classList.add("active");
           }
         });
+        
+        // Add event listener for logo search input to filter logos
+        document.getElementById("logo-search").addEventListener("input", function(e) {
+          displayLogos(e.target.value);
+        });
       });
       
       // Update active status and refresh the EPG data if activated.
