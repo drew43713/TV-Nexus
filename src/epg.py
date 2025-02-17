@@ -243,6 +243,12 @@ def build_combined_epg():
 # 4) Update program data for a single channel (partial reparse)
 # ====================================================
 def update_program_data_for_channel(channel_id: int):
+    """
+    1) Fetch the channel's tvg_name (and name) from 'channels'.
+    2) Remove old programme data from epg_programs & EPG.xml for that channel.
+    3) Find matching raw EPG data from 'raw_epg_*' tables for that tvg_name or name.
+    4) Insert it into epg_programs & EPG.xml (only for this channel).
+    """
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     c.execute("SELECT tvg_name, name, logo_url FROM channels WHERE id = ?", (channel_id,))
@@ -271,7 +277,7 @@ def update_program_data_for_channel(channel_id: int):
              WHERE raw_id = ? OR display_name = ?
         """, (db_tvg_name, db_tvg_name))
         raw_ids = [r[0] for r in c.fetchall()]
-        if not raw_ids:  # Fallback to using channel name if no match by tvg_name.
+        if not raw_ids:  # Fallback: if no matching raw_id, try using the channel name
             c.execute("""
                 SELECT DISTINCT raw_id
                   FROM raw_epg_channels
@@ -300,6 +306,7 @@ def update_program_data_for_channel(channel_id: int):
         conn.close()
         return
 
+    # Ensure <channel> node is present.
     channel_el = None
     for ch_el in root.findall("channel"):
         if ch_el.get("id") == str(channel_id):
