@@ -25,5 +25,3 @@ app.include_router(status_router)
 def startup_event():
     init_db()         # Create and update the database schema
     load_m3u_files()  # Load the M3U files (this will also update the EPG)
-
-

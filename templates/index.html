@@ -144,6 +144,7 @@
         height: 100%;
         background: rgba(0, 0, 0, 0.5);
         z-index: 900;
+        cursor: pointer;
       }
       
       /* Logo Picker scrollable */
@@ -237,7 +238,7 @@
         color: #fff;
       }
       
-      /* Logo Picker grid layout */
+      /* Logo Picker grid layout (unchanged as per your original code) */
       #logo-picker-container {
         display: grid;
         grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
@@ -414,7 +415,7 @@
         <h3>Select a Logo</h3>
         <input type="text" id="logo-search" placeholder="Search logos by filename..." />
         <div id="logo-picker-container"></div>
-        <button onclick="closeLogoPicker()">Cancel</button>
+        <button type="button" onclick="closeLogoPicker()">Cancel</button>
       </div>
     </div>
     
@@ -616,8 +617,6 @@
                   });
               } else {
                 document.getElementById("modal-logo").src = logoUrl;
-                Array.from(pickerContainer.children).forEach(child => child.classList.remove("selected"));
-                logoImg.classList.add("selected");
                 closeLogoPicker();
               }
             };
@@ -729,6 +728,11 @@
       function closeModal() {
         document.getElementById("modal").style.display = "none";
         document.getElementById("overlay").style.display = "none";
+      }
+      
+      function closeLogoPicker() {
+        document.getElementById("logo-picker-overlay").style.display = "none";
+        document.getElementById("logo-picker-modal").style.display = "none";
       }
       
       function handleEnter(event, input) {
