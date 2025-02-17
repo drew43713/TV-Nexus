@@ -277,10 +277,16 @@ def update_program_data_for_channel(channel_id: int):
         c.execute("""
             SELECT DISTINCT raw_id
               FROM raw_epg_channels
-             WHERE raw_id = ?
-                OR display_name = ?
+             WHERE raw_id = ? OR display_name = ?
         """, (db_tvg_name, db_tvg_name))
         raw_ids = [r[0] for r in c.fetchall()]
+        if not raw_ids:  # Fallback: if no matching raw_id, try using the channel name
+            c.execute("""
+                SELECT DISTINCT raw_id
+                  FROM raw_epg_channels
+                 WHERE display_name = ?
+            """, (db_name,))
+            raw_ids = [r[0] for r in c.fetchall()]
     else:
         c.execute("""
             SELECT DISTINCT raw_id
@@ -333,7 +339,6 @@ def update_program_data_for_channel(channel_id: int):
                 INSERT INTO epg_programs (channel_tvg_name, start, stop, title, description)
                 VALUES (?, ?, ?, ?, ?)
             """, (str(channel_id), start_t, stop_t, title_txt, desc_txt))
-
             prog_el = ET.Element("programme", {
                 "channel": str(channel_id),
                 "start": start_t,

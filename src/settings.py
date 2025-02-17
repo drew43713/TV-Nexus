@@ -1,7 +1,7 @@
-from fastapi import APIRouter, Request, Form, HTTPException, UploadFile, File
 import os
 import json
 import shutil
+from fastapi import APIRouter, Request, Form, HTTPException, UploadFile, File
 from fastapi.responses import RedirectResponse, HTMLResponse
 from fastapi.templating import Jinja2Templates
 from .config import CONFIG_FILE_PATH, EPG_DIR, M3U_DIR
@@ -91,7 +91,8 @@ async def upload_epg(file: UploadFile = File(...)):
     except Exception as e:
         raise HTTPException(status_code=500, detail="Error re-parsing EPG files: " + str(e))
     
-    return RedirectResponse(url="/settings?epg_upload_success=true", status_code=303)
+    # Return a JSON response so the UI can display a status message
+    return {"success": True, "message": "EPG file uploaded and parsed successfully."}
 
 @router.post("/upload_m3u")
 async def upload_m3u(file: UploadFile = File(...)):
@@ -137,3 +138,23 @@ def parse_epg():
         return {"success": True, "message": "EPG parsed successfully."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/delete_epg")
+def delete_epg(filename: str = Form(...)):
+    """
+    Endpoint to delete a specified EPG file and reparse the EPG data.
+    Returns a JSON response so the UI can display a status message.
+    """
+    file_path = os.path.join(EPG_DIR, filename)
+    if not os.path.exists(file_path):
+        return {"success": False, "message": "EPG file not found."}
+    try:
+        os.remove(file_path)
+    except Exception as e:
+        return {"success": False, "message": "Error deleting file: " + str(e)}
+    try:
+        parse_raw_epg_files()
+        build_combined_epg()
+    except Exception as e:
+        return {"success": False, "message": "Error re-parsing EPG files: " + str(e)}
+    return {"success": True, "message": "EPG file deleted and EPG re-parsed successfully."}

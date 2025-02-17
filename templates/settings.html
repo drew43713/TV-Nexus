@@ -223,22 +223,33 @@
     <div class="section">
       <h2>EPG Files</h2>
       <div class="config-form">
-        <form action="/upload_epg" method="post" enctype="multipart/form-data">
+        <!-- EPG upload form now submits via AJAX -->
+        <form id="upload-epg-form" enctype="multipart/form-data">
           <input type="file" name="file" accept=".xml,.xmltv,.gz" required />
           <button type="submit">Upload EPG File</button>
         </form>
       </div>
+      <!-- Status message for EPG upload -->
+      <div class="confirmation" id="upload-epg-status" style="display: none;"></div>
       <!-- New button to trigger parsing of EPG files using AJAX -->
       <div class="config-form">
         <button id="parse-epg-button" onclick="parseEPG()">Parse EPG Files</button>
       </div>
       <!-- Status message for EPG parsing -->
       <div class="confirmation" id="parse-epg-status" style="display: none;"></div>
+      <!-- Global status message for deleting an EPG file -->
+      <div class="confirmation" id="delete-epg-status" style="display: none;"></div>
       {% if epg_files %}
       <div class="scrollable-list">
         <ul>
           {% for file in epg_files %}
-          <li>{{ file }}</li>
+          <li>
+            {{ file }}
+            <form action="/delete_epg" method="post" class="delete-epg-form" style="display:inline;">
+              <input type="hidden" name="filename" value="{{ file }}">
+              <button type="submit">Delete</button>
+            </form>
+          </li>
           {% endfor %}
         </ul>
       </div>
@@ -268,8 +279,10 @@
     </div>
 
     <script>
-      // Global flag to pause stream status updates during EPG parsing.
+      // Global flags to pause stream status updates during any EPG operation.
       let epgParsingInProgress = false;
+      let epgUploadingInProgress = false;
+      let epgDeletingInProgress = false;
 
       // Hide confirmation messages after 5 seconds.
       setTimeout(() => {
@@ -281,6 +294,10 @@
         if (m3uConf) m3uConf.style.display = "none";
         const parseEpgConf = document.getElementById("parse-epg-confirmation");
         if (parseEpgConf) parseEpgConf.style.display = "none";
+        const uploadEpgStatus = document.getElementById("upload-epg-status");
+        if (uploadEpgStatus) uploadEpgStatus.style.display = "none";
+        const deleteEpgStatus = document.getElementById("delete-epg-status");
+        if (deleteEpgStatus) deleteEpgStatus.style.display = "none";
       }, 5000);
 
       // Remove query parameters from URL after page load.
@@ -297,19 +314,32 @@
         updateStreamStatus();
         setInterval(updateStreamStatus, 5000);
 
-        // Auto-refresh page 3 seconds after any form submission.
+        // Auto-refresh page 3 seconds after any non-AJAX form submission.
         document.querySelectorAll(".config-form form").forEach(form => {
-          form.addEventListener("submit", () => {
-            setTimeout(() => {
-              location.reload();
-            }, 3000);
-          });
+          // Only add for forms without an id (AJAX forms have an id)
+          if (!form.id) {
+            form.addEventListener("submit", () => {
+              setTimeout(() => {
+                location.reload();
+              }, 3000);
+            });
+          }
+        });
+
+        // Attach AJAX submission to the EPG upload form.
+        const uploadForm = document.getElementById("upload-epg-form");
+        if (uploadForm) {
+          uploadForm.addEventListener("submit", uploadEPG);
+        }
+        // Attach AJAX submission to all delete EPG forms.
+        document.querySelectorAll(".delete-epg-form").forEach(form => {
+          form.addEventListener("submit", deleteEPG);
         });
       });
 
       function updateStreamStatus() {
-        // If EPG parsing is in progress, skip updating stream status.
-        if (epgParsingInProgress) return;
+        // Pause updating if any EPG operation is in progress.
+        if (epgParsingInProgress || epgUploadingInProgress || epgDeletingInProgress) return;
         fetch("/api/stream_status")
           .then((response) => response.json())
           .then((data) => {
@@ -414,6 +444,88 @@
             statusEl.innerText = "Error parsing EPG files: " + error.message;
             epgParsingInProgress = false;
             parseButton.disabled = false;
+          });
+      }
+
+      // AJAX function to handle EPG file upload
+      function uploadEPG(event) {
+        event.preventDefault();
+        epgUploadingInProgress = true;
+        const form = document.getElementById("upload-epg-form");
+        const formData = new FormData(form);
+        const statusEl = document.getElementById("upload-epg-status");
+        statusEl.innerText = "Uploading EPG file... please wait.";
+        statusEl.style.display = "block";
+
+        fetch("/upload_epg", {
+          method: "POST",
+          body: formData
+        })
+          .then(response => {
+            if (!response.ok) {
+              throw new Error("Upload failed");
+            }
+            return response.json();
+          })
+          .then(data => {
+            if (data.success) {
+              statusEl.innerText = data.message;
+            } else {
+              statusEl.innerText = "Error: " + data.message;
+            }
+            setTimeout(() => {
+              statusEl.style.display = "none";
+              epgUploadingInProgress = false;
+              location.reload();
+            }, 3000);
+          })
+          .catch(error => {
+            statusEl.innerText = "Error uploading EPG: " + error.message;
+            setTimeout(() => {
+              statusEl.style.display = "none";
+              epgUploadingInProgress = false;
+            }, 5000);
+          });
+      }
+
+      // AJAX function to handle deletion of an EPG file
+      function deleteEPG(event) {
+        event.preventDefault();
+        epgDeletingInProgress = true;
+        const form = event.target;
+        const formData = new FormData(form);
+        const statusEl = document.getElementById("delete-epg-status");
+        statusEl.innerText = "Deleting EPG file... please wait.";
+        statusEl.style.display = "block";
+
+        fetch("/delete_epg", {
+          method: "POST",
+          body: formData
+        })
+          .then(response => {
+            if (!response.ok) {
+              throw new Error("Delete failed");
+            }
+            return response.json();
+          })
+          .then(data => {
+            if (data.success) {
+              statusEl.innerText = data.message;
+            } else {
+              statusEl.innerText = "Error: " + data.message;
+            }
+            setTimeout(() => {
+              statusEl.style.display = "none";
+              epgDeletingInProgress = false;
+              location.reload();
+            }, 3000);
+          })
+          .catch(error => {
+            statusEl.innerText = "Error deleting EPG file: " + error.message;
+            setTimeout(() => {
+              statusEl.style.display = "none";
+              epgDeletingInProgress = false;
+            }, 5000);
           });
       }
     </script>
