@@ -19,7 +19,6 @@
         margin: 0;
         padding: 20px;
       }
-
       /* Navigation Bar */
       nav {
         position: sticky;
@@ -46,7 +45,6 @@
         background: rgba(255, 255, 255, 0.2);
         border-radius: 10px;
       }
-
       /* Headings */
       h1,
       h2 {
@@ -55,7 +53,6 @@
       h1 {
         color: #ffcc00;
       }
-
       /* Section container styling for settings elements */
       .section {
         width: 80%;
@@ -70,7 +67,6 @@
         margin-top: 0;
         color: #ffcc00;
       }
-
       /* Config form styling */
       .config-form {
         text-align: center;
@@ -98,7 +94,6 @@
       .config-form button:hover {
         opacity: 0.8;
       }
-
       /* Scrollable EPG List */
       .scrollable-list {
         max-height: 120px;
@@ -108,7 +103,6 @@
         border-radius: 5px;
         border: 1px solid #444;
       }
-
       /* Confirmation message styling */
       .confirmation {
         background-color: rgba(40, 167, 69, 0.2);
@@ -120,7 +114,6 @@
         text-align: center;
         border-radius: 5px;
       }
-
       /* Stream status styling */
       #stream-status {
         background: #2a2a3a;
@@ -144,7 +137,6 @@
         background: #3a3a4a;
         color: #ffcc00;
       }
-
       /* Modal logo constrained */
       #modal-logo {
         max-width: 200px;
@@ -153,7 +145,6 @@
         display: block;
         margin: 10px auto;
       }
-
       /* Scrollable probe results box */
       #probe-results {
         max-height: 200px;
@@ -176,9 +167,7 @@
       <a href="/">TV Nexus - Channels</a>
       <a href="/settings" class="active-tab">TV Nexus - Settings</a>
     </nav>
-
     <h1>TV Nexus Settings</h1>
-
     <!-- Confirmation banners -->
     {% if updated %}
     <div class="confirmation" id="confirmation-message">
@@ -200,7 +189,6 @@
       EPG files parsed successfully!
     </div>
     {% endif %}
-
     <!-- M3U Files Section (at the top) -->
     <div class="section">
       <h2>M3U File</h2>
@@ -218,7 +206,6 @@
       <p>No M3U file loaded.</p>
       {% endif %}
     </div>
-
     <!-- EPG Files Section -->
     <div class="section">
       <h2>EPG Files</h2>
@@ -244,7 +231,10 @@
         <ul>
           {% for file in epg_files %}
           <li>
+            <!-- Clickable colored dot that triggers the hidden color chooser -->
+            <span class="epg-color-dot" style="display:inline-block; width:10px; height:10px; border-radius:50%; background: {{ epg_colors[file] }}; margin-right:5px; cursor:pointer;"></span>
             {{ file }}
+            <input type="color" class="epg-color-picker" data-filename="{{ file }}" value="{{ epg_colors[file] }}" style="display:none;">
             <form action="/delete_epg" method="post" class="delete-epg-form" style="display:inline;">
               <input type="hidden" name="filename" value="{{ file }}">
               <button type="submit">Delete</button>
@@ -257,7 +247,6 @@
       <p>No EPG files loaded.</p>
       {% endif %}
     </div>
-
     <!-- Tuner Count Section -->
     <div class="section">
       <h2>Tuner Count</h2>
@@ -269,7 +258,6 @@
         </form>
       </div>
     </div>
-
     <!-- Stream Status Section -->
     <div class="section">
       <h2>Stream Status</h2>
@@ -277,13 +265,11 @@
         <div id="stream-status-content">Loading stream status...</div>
       </div>
     </div>
-
     <script>
       // Global flags to pause stream status updates during any EPG operation.
       let epgParsingInProgress = false;
       let epgUploadingInProgress = false;
       let epgDeletingInProgress = false;
-
       // Hide confirmation messages after 5 seconds.
       setTimeout(() => {
         const conf = document.getElementById("confirmation-message");
@@ -299,7 +285,6 @@
         const deleteEpgStatus = document.getElementById("delete-epg-status");
         if (deleteEpgStatus) deleteEpgStatus.style.display = "none";
       }, 5000);
-
       // Remove query parameters from URL after page load.
       window.addEventListener("DOMContentLoaded", () => {
         const urlParams = new URLSearchParams(window.location.search);
@@ -313,10 +298,8 @@
         }
         updateStreamStatus();
         setInterval(updateStreamStatus, 5000);
-
         // Auto-refresh page 3 seconds after any non-AJAX form submission.
         document.querySelectorAll(".config-form form").forEach(form => {
-          // Only add for forms without an id (AJAX forms have an id)
           if (!form.id) {
             form.addEventListener("submit", () => {
               setTimeout(() => {
@@ -325,18 +308,27 @@
             });
           }
         });
-
-        // Attach AJAX submission to the EPG upload form.
         const uploadForm = document.getElementById("upload-epg-form");
         if (uploadForm) {
           uploadForm.addEventListener("submit", uploadEPG);
         }
-        // Attach AJAX submission to all delete EPG forms.
         document.querySelectorAll(".delete-epg-form").forEach(form => {
           form.addEventListener("submit", deleteEPG);
         });
+        // Attach event listener to the color dot to trigger its hidden color picker.
+        document.querySelectorAll(".epg-color-dot").forEach(dot => {
+          dot.addEventListener("click", function() {
+            const picker = this.parentElement.querySelector(".epg-color-picker");
+            if (picker) {
+              picker.click();
+            }
+          });
+        });
+        // Attach event listener to color pickers for change events.
+        document.querySelectorAll(".epg-color-picker").forEach(picker => {
+          picker.addEventListener("change", updateEpgColor);
+        });
       });
-
       function updateStreamStatus() {
         // Pause updating if any EPG operation is in progress.
         if (epgParsingInProgress || epgUploadingInProgress || epgDeletingInProgress) return;
@@ -371,24 +363,14 @@
                 let audioInfo = "N/A";
                 if (stream.probe_info && stream.probe_info.streams) {
                   const streams = stream.probe_info.streams;
-                  const videoStream = streams.find(
-                    (s) => s.codec_type === "video"
-                  );
+                  const videoStream = streams.find((s) => s.codec_type === "video");
                   if (videoStream) {
                     videoCodec = videoStream.codec_name;
                     resolution = videoStream.width + "x" + videoStream.height;
                   }
-                  const audioStream = streams.find(
-                    (s) => s.codec_type === "audio"
-                  );
+                  const audioStream = streams.find((s) => s.codec_type === "audio");
                   if (audioStream) {
-                    audioInfo =
-                      audioStream.codec_name +
-                      " " +
-                      audioStream.sample_rate +
-                      "Hz " +
-                      audioStream.channels +
-                      "ch";
+                    audioInfo = audioStream.codec_name + " " + audioStream.sample_rate + "Hz " + audioStream.channels + "ch";
                   }
                 }
                 html += `<tr>
@@ -411,8 +393,6 @@
               "<p>Error fetching stream status: " + error + "</p>";
           });
       }
-
-      // Asynchronous function to parse EPG files
       function parseEPG() {
         const parseButton = document.getElementById("parse-epg-button");
         parseButton.disabled = true;
@@ -420,7 +400,6 @@
         const statusEl = document.getElementById("parse-epg-status");
         statusEl.innerText = "Parsing EPG files... please wait.";
         statusEl.style.display = "block";
-
         fetch("/parse_epg", { method: "POST" })
           .then(response => {
             if (!response.ok) {
@@ -446,8 +425,6 @@
             parseButton.disabled = false;
           });
       }
-
-      // AJAX function to handle EPG file upload
       function uploadEPG(event) {
         event.preventDefault();
         epgUploadingInProgress = true;
@@ -456,7 +433,6 @@
         const statusEl = document.getElementById("upload-epg-status");
         statusEl.innerText = "Uploading EPG file... please wait.";
         statusEl.style.display = "block";
-
         fetch("/upload_epg", {
           method: "POST",
           body: formData
@@ -487,8 +463,6 @@
             }, 5000);
           });
       }
-
-      // AJAX function to handle deletion of an EPG file
       function deleteEPG(event) {
         event.preventDefault();
         epgDeletingInProgress = true;
@@ -497,7 +471,6 @@
         const statusEl = document.getElementById("delete-epg-status");
         statusEl.innerText = "Deleting EPG file... please wait.";
         statusEl.style.display = "block";
-
         fetch("/delete_epg", {
           method: "POST",
           body: formData
@@ -526,6 +499,30 @@
               statusEl.style.display = "none";
               epgDeletingInProgress = false;
             }, 5000);
+          });
+      }
+      function updateEpgColor(event) {
+        const picker = event.target;
+        const filename = picker.getAttribute("data-filename");
+        const newColor = picker.value;
+        fetch("/update_epg_color", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: `filename=${encodeURIComponent(filename)}&color=${encodeURIComponent(newColor)}`
+        })
+          .then(response => response.json())
+          .then(data => {
+            if (data.success) {
+              const dot = picker.parentElement.querySelector(".epg-color-dot");
+              if (dot) {
+                dot.style.background = newColor;
+              }
+            } else {
+              alert("Error updating color: " + data.message);
+            }
+          })
+          .catch(error => {
+            alert("Error updating color: " + error.message);
           });
       }
     </script>

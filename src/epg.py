@@ -5,8 +5,9 @@ import sqlite3
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
 import re
-
-from .config import EPG_DIR, MODIFIED_EPG_DIR, DB_FILE, BASE_URL
+import json
+import random
+from .config import EPG_DIR, MODIFIED_EPG_DIR, DB_FILE, BASE_URL, EPG_COLORS_FILE
 
 # ====================================================
 # 1) Helper to parse/normalize XMLTV date/time
@@ -46,11 +47,11 @@ def parse_raw_epg_files():
 
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-    
+
     # Clear previous raw EPG data.
     c.execute("DELETE FROM raw_epg_channels")
     c.execute("DELETE FROM raw_epg_programs")
-    
+
     # Create raw_epg_channels table.
     c.execute('''
         CREATE TABLE IF NOT EXISTS raw_epg_channels (
@@ -59,7 +60,7 @@ def parse_raw_epg_files():
             display_name TEXT
         )
     ''')
-    
+
     # Create raw_epg_programs table with an extra icon_url column and the new raw_epg_file column.
     c.execute('''
         CREATE TABLE IF NOT EXISTS raw_epg_programs (
@@ -73,8 +74,8 @@ def parse_raw_epg_files():
             raw_epg_file TEXT
         )
     ''')
-    
-    # Ensure the icon_url column exists (in case the table existed before).
+
+    # Ensure the icon_url column exists.
     c.execute("PRAGMA table_info(raw_epg_programs)")
     columns = [col_info[1] for col_info in c.fetchall()]
     if "icon_url" not in columns:
@@ -82,14 +83,14 @@ def parse_raw_epg_files():
             c.execute("ALTER TABLE raw_epg_programs ADD COLUMN icon_url TEXT")
         except Exception as e:
             print(f"[WARNING] Could not add icon_url column: {e}")
-    
-    # Ensure the raw_epg_file column exists (in case the table existed before).
+
+    # Ensure the raw_epg_file column exists.
     if "raw_epg_file" not in columns:
         try:
             c.execute("ALTER TABLE raw_epg_programs ADD COLUMN raw_epg_file TEXT")
         except Exception as e:
             print(f"[WARNING] Could not add raw_epg_file column: {e}")
-    
+
     for epg_file in epg_files:
         print(f"[INFO] Reading raw EPG: {epg_file}")
         try:
@@ -114,7 +115,7 @@ def parse_raw_epg_files():
                 else:
                     disp_name = ""
                 c.execute("INSERT INTO raw_epg_channels (raw_id, display_name) VALUES (?, ?)", (raw_id, disp_name))
-            
+
             # Process programme elements.
             for prog_el in root.findall("programme"):
                 raw_prog_channel = html.unescape(prog_el.get("channel", "").strip())
@@ -209,12 +210,10 @@ def build_combined_epg():
             """, (rid,))
             raw_progs = c.fetchall()
             for (start_t, stop_t, title_txt, desc_txt, icon_url) in raw_progs:
-                # Insert into the epg_programs table.
                 c.execute("""
                     INSERT INTO epg_programs (channel_tvg_name, start, stop, title, description)
                     VALUES (?, ?, ?, ?, ?)
                 """, (str(channel_number), start_t, stop_t, title_txt, desc_txt))
-                # Build the programme element.
                 prog_el = ET.Element("programme", {
                     "channel": str(channel_number),
                     "start": start_t,
@@ -227,7 +226,6 @@ def build_combined_epg():
                 # If an icon was provided, rewrite its URL.
                 if icon_url:
                     filename = os.path.basename(icon_url)
-                    # Build new URL: using schedulesdirect_cache folder.
                     new_icon_url = f"{BASE_URL}/schedulesdirect_cache/{filename}"
                     icon_el = ET.Element("icon", {"src": new_icon_url})
                     prog_el.append(icon_el)
@@ -242,16 +240,9 @@ def build_combined_epg():
     print(f"[SUCCESS] Combined EPG saved as {combined_epg_file}")
 
 # ====================================================
-# 4) Update program data for a single channel
-# (No big file re-parse)
+# 4) Update program data for a single channel (partial reparse)
 # ====================================================
 def update_program_data_for_channel(channel_id: int):
-    """
-    1) Fetch the channel's tvg_name (and name) from 'channels'.
-    2) Remove old programme data from epg_programs & EPG.xml for that channel.
-    3) Find matching raw EPG data from 'raw_epg_*' tables for that tvg_name or name.
-    4) Insert it into epg_programs & EPG.xml (only for this channel).
-    """
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     c.execute("SELECT tvg_name, name, logo_url FROM channels WHERE id = ?", (channel_id,))
@@ -280,7 +271,7 @@ def update_program_data_for_channel(channel_id: int):
              WHERE raw_id = ? OR display_name = ?
         """, (db_tvg_name, db_tvg_name))
         raw_ids = [r[0] for r in c.fetchall()]
-        if not raw_ids:  # Fallback: if no matching raw_id, try using the channel name
+        if not raw_ids:  # Fallback to using channel name if no match by tvg_name.
             c.execute("""
                 SELECT DISTINCT raw_id
                   FROM raw_epg_channels
@@ -309,7 +300,6 @@ def update_program_data_for_channel(channel_id: int):
         conn.close()
         return
 
-    # Ensure <channel> node is present.
     channel_el = None
     for ch_el in root.findall("channel"):
         if ch_el.get("id") == str(channel_id):
@@ -372,7 +362,6 @@ def _remove_programs_from_xml(channel_id: int):
     combined_epg_file = os.path.join(MODIFIED_EPG_DIR, "EPG.xml")
     if not os.path.exists(combined_epg_file):
         return
-
     try:
         tree = ET.parse(combined_epg_file)
         root = tree.getroot()
@@ -387,30 +376,20 @@ def _remove_programs_from_xml(channel_id: int):
     except Exception as e:
         print(f"[ERROR] Could not remove old programmes from EPG.xml: {e}")
 
-# ====================================================
-# 5) Update channel logos or metadata
-# ====================================================
 def update_channel_logo_in_epg(channel_id: int, new_logo: str):
-    """
-    Update just the <icon> for this channel in EPG.xml.
-    Does not re-parse raw EPG.
-    """
     combined_epg_file = os.path.join(MODIFIED_EPG_DIR, "EPG.xml")
     if not os.path.exists(combined_epg_file):
         return
-
     try:
         tree = ET.parse(combined_epg_file)
         root = tree.getroot()
         updated = False
-
         for channel_el in root.findall("channel"):
             if channel_el.get("id") == str(channel_id):
                 if new_logo.startswith("/"):
                     full_logo_url = f"{BASE_URL}{new_logo}"
                 else:
                     full_logo_url = new_logo
-
                 icon_el = channel_el.find("icon")
                 if icon_el is not None:
                     icon_el.set("src", full_logo_url)
@@ -419,7 +398,6 @@ def update_channel_logo_in_epg(channel_id: int, new_logo: str):
                     channel_el.append(icon_el)
                 updated = True
                 break
-
         if updated:
             tree.write(combined_epg_file, encoding="utf-8", xml_declaration=True)
             print(f"[INFO] Updated channel {channel_id} logo in EPG.xml.")
@@ -427,20 +405,14 @@ def update_channel_logo_in_epg(channel_id: int, new_logo: str):
         print(f"[ERROR] update_channel_logo_in_epg: {e}")
 
 def update_channel_metadata_in_epg(channel_id: int, new_name: str, new_logo: str):
-    """
-    Update the <display-name> and <icon> for a channel in EPG.xml.
-    """
     combined_epg_file = os.path.join(MODIFIED_EPG_DIR, "EPG.xml")
     if not os.path.exists(combined_epg_file):
         return
-
     try:
         tree = ET.parse(combined_epg_file)
         root = tree.getroot()
-
         for ch_el in root.findall("channel"):
             if ch_el.get("id") == str(channel_id):
-                # Update display-name.
                 disp_el = ch_el.find("display-name")
                 if disp_el is not None:
                     disp_el.text = new_name
@@ -448,13 +420,10 @@ def update_channel_metadata_in_epg(channel_id: int, new_name: str, new_logo: str
                     disp_el = ET.Element("display-name")
                     disp_el.text = new_name
                     ch_el.append(disp_el)
-
-                # Update icon.
                 if new_logo.startswith("/"):
                     full_logo_url = f"{BASE_URL}{new_logo}"
                 else:
                     full_logo_url = new_logo
-
                 icon_el = ch_el.find("icon")
                 if icon_el is not None:
                     icon_el.set("src", full_logo_url)
@@ -465,14 +434,9 @@ def update_channel_metadata_in_epg(channel_id: int, new_name: str, new_logo: str
         print(f"[ERROR] Could not update channel {channel_id} metadata in EPG.xml: {e}")
 
 def update_modified_epg(old_id: int, new_id: int, swap: bool):
-    """
-    If you rename channel IDs, also update them in EPG.xml <channel> and <programme>.
-    This does NOT parse raw EPG or do partial merges—just edits the final EPG.xml.
-    """
     combined_epg_file = os.path.join(MODIFIED_EPG_DIR, "EPG.xml")
     if not os.path.exists(combined_epg_file):
         return
-
     try:
         tree = ET.parse(combined_epg_file)
         root = tree.getroot()
@@ -500,3 +464,37 @@ def update_modified_epg(old_id: int, new_id: int, swap: bool):
         print(f"[INFO] update_modified_epg: changed channel {old_id} -> {new_id} (swap={swap})")
     except Exception as e:
         print(f"[ERROR] update_modified_epg: {e}")
+
+# ====================================================
+# EPG Colors functionality integrated into epg.py using config settings.
+# ====================================================
+def get_color_for_epg_file(filename):
+    # Use the EPG_COLORS_FILE from the config.
+    mapping = load_epg_color_mapping()
+    if filename in mapping:
+        return mapping[filename]
+    # Generate a random hex color, e.g. "#A1B2C3"
+    color = "#%06x" % random.randint(0, 0xFFFFFF)
+    mapping[filename] = color
+    save_epg_color_mapping(mapping)
+    return color
+
+def load_epg_color_mapping():
+    # Ensure the directory for the colors file exists.
+    directory = os.path.dirname(EPG_COLORS_FILE)
+    if not os.path.exists(directory):
+        os.makedirs(directory, exist_ok=True)
+    if not os.path.exists(EPG_COLORS_FILE):
+        with open(EPG_COLORS_FILE, "w") as f:
+            json.dump({}, f)
+        return {}
+    try:
+        with open(EPG_COLORS_FILE, "r") as f:
+            mapping = json.load(f)
+    except Exception:
+        mapping = {}
+    return mapping
+
+def save_epg_color_mapping(mapping):
+    with open(EPG_COLORS_FILE, "w") as f:
+        json.dump(mapping, f, indent=4)

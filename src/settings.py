@@ -4,8 +4,8 @@ import shutil
 from fastapi import APIRouter, Request, Form, HTTPException, UploadFile, File
 from fastapi.responses import RedirectResponse, HTMLResponse
 from fastapi.templating import Jinja2Templates
-from .config import CONFIG_FILE_PATH, EPG_DIR, M3U_DIR
-from .epg import parse_raw_epg_files, build_combined_epg
+from .config import CONFIG_FILE_PATH, M3U_DIR, EPG_DIR, MODIFIED_EPG_DIR, DB_FILE, LOGOS_DIR, CUSTOM_LOGOS_DIR, TUNER_COUNT
+from .epg import parse_raw_epg_files, build_combined_epg, load_epg_color_mapping, save_epg_color_mapping, get_color_for_epg_file
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
@@ -16,6 +16,11 @@ def settings_page(request: Request):
     epg_files = sorted(
         [f for f in os.listdir(EPG_DIR) if f.lower().endswith((".xml", ".xmltv", ".gz"))]
     ) if os.path.exists(EPG_DIR) else []
+    
+    # Build a mapping for each EPG file's color.
+    epg_colors = {}
+    for file in epg_files:
+        epg_colors[file] = get_color_for_epg_file(file)
     
     # Find the first (and only) M3U file.
     m3u_file = None
@@ -42,6 +47,7 @@ def settings_page(request: Request):
     return templates.TemplateResponse("settings.html", {
         "request": request,
         "epg_files": epg_files,
+        "epg_colors": epg_colors,
         "m3u_file": m3u_file,
         "tuner_count": tuner_count,
         "updated": updated,
@@ -91,7 +97,6 @@ async def upload_epg(file: UploadFile = File(...)):
     except Exception as e:
         raise HTTPException(status_code=500, detail="Error re-parsing EPG files: " + str(e))
     
-    # Return a JSON response so the UI can display a status message
     return {"success": True, "message": "EPG file uploaded and parsed successfully."}
 
 @router.post("/upload_m3u")
@@ -102,7 +107,6 @@ async def upload_m3u(file: UploadFile = File(...)):
     if ext != allowed_ext:
         raise HTTPException(status_code=400, detail="Invalid file type. Only m3u files are allowed.")
     
-    # Ensure the M3U directory exists and remove any existing m3u file.
     os.makedirs(M3U_DIR, exist_ok=True)
     for f in os.listdir(M3U_DIR):
         if f.lower().endswith(".m3u"):
@@ -120,7 +124,6 @@ async def upload_m3u(file: UploadFile = File(...)):
     finally:
         file.file.close()
     
-    # Optionally, trigger loading the new m3u file immediately.
     from .m3u import load_m3u_files
     load_m3u_files()
     
@@ -128,10 +131,6 @@ async def upload_m3u(file: UploadFile = File(...)):
 
 @router.post("/parse_epg")
 def parse_epg():
-    """
-    Endpoint to re-parse all raw EPG files and rebuild the combined EPG.
-    Returns a JSON response with success and message keys.
-    """
     try:
         parse_raw_epg_files()
         build_combined_epg()
@@ -141,10 +140,6 @@ def parse_epg():
 
 @router.post("/delete_epg")
 def delete_epg(filename: str = Form(...)):
-    """
-    Endpoint to delete a specified EPG file and reparse the EPG data.
-    Returns a JSON response so the UI can display a status message.
-    """
     file_path = os.path.join(EPG_DIR, filename)
     if not os.path.exists(file_path):
         return {"success": False, "message": "EPG file not found."}
@@ -158,3 +153,10 @@ def delete_epg(filename: str = Form(...)):
     except Exception as e:
         return {"success": False, "message": "Error re-parsing EPG files: " + str(e)}
     return {"success": True, "message": "EPG file deleted and EPG re-parsed successfully."}
+
+@router.post("/update_epg_color")
+def update_epg_color(filename: str = Form(...), color: str = Form(...)):
+    mapping = load_epg_color_mapping()
+    mapping[filename] = color
+    save_epg_color_mapping(mapping)
+    return {"success": True, "message": "EPG file color updated."}

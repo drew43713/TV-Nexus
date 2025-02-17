@@ -16,12 +16,14 @@ DEFAULT_CONFIG = {
     "CUSTOM_LOGOS_DIR": os.path.join("config", "custom_logos"),
     "TUNER_COUNT": 1,
     # New optional variable:
-    "DOMAIN_NAME": ""   # e.g. "mydomain.com"
+    "DOMAIN_NAME": "",   # e.g. "mydomain.com"
+    "EPG_COLORS_FILE": os.path.join("config", "epg", "epg_colors.json")
 }
 
 # Ensure the config directory exists.
 os.makedirs("config", exist_ok=True)
 os.makedirs("config/schedulesdirect_cache", exist_ok=True)
+os.makedirs(os.path.join("config", "epg"), exist_ok=True)  # Ensure the epg directory exists
 
 # Start with the default config.
 config = DEFAULT_CONFIG.copy()
@@ -70,6 +72,7 @@ LOGOS_DIR = config["LOGOS_DIR"]
 CUSTOM_LOGOS_DIR = config["CUSTOM_LOGOS_DIR"]
 TUNER_COUNT = config["TUNER_COUNT"]
 DOMAIN_NAME = config["DOMAIN_NAME"]
+EPG_COLORS_FILE = config["EPG_COLORS_FILE"]  # New: path for the EPG colors file
 
 def load_config():
     try:
