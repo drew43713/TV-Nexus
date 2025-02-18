@@ -1,6 +1,11 @@
 import sqlite3
+import queue
+import threading
 from fastapi import HTTPException
 from .config import DB_FILE
+
+db_write_queue = queue.Queue()
+stop_worker = threading.Event()
 
 def init_db():
     """
@@ -128,3 +133,29 @@ def swap_channel_numbers(current_number: int, new_number: int) -> bool:
     conn.commit()
     conn.close()
     return swap
+
+def db_worker():
+    """
+    A background thread that continuously processes write tasks 
+    from `db_write_queue` (FIFO).
+    Each task is a callable (function/lambda) that does the 
+    database write operation (including commit).
+    """
+    while not stop_worker.is_set():
+        try:
+            task = db_write_queue.get(timeout=0.5)
+        except queue.Empty:
+            continue
+        try:
+            # Execute the write operation
+            task()
+        except Exception as e:
+            print(f"[DB Worker] Exception while executing DB task: {e}")
+        finally:
+            db_write_queue.task_done()
+            
+# In your FastAPI startup event, start the worker
+def start_db_worker():
+    worker_thread = threading.Thread(target=db_worker, daemon=True)
+    worker_thread.start()
+    return worker_thread

@@ -9,7 +9,7 @@ from fastapi.responses import (
 )
 import os
 from .config import DB_FILE, MODIFIED_EPG_DIR, EPG_DIR, HOST_IP, PORT, CUSTOM_LOGOS_DIR, LOGOS_DIR, TUNER_COUNT, load_config
-from .database import init_db, swap_channel_numbers
+from .database import init_db, swap_channel_numbers, db_write_queue
 from .epg import (
     update_modified_epg, update_channel_logo_in_epg, update_channel_metadata_in_epg,
     update_program_data_for_channel, parse_raw_epg_files, build_combined_epg
@@ -184,13 +184,33 @@ def update_channel_number(current_id: int = Form(...), new_id: int = Form(...)):
 # --- New endpoints for active/inactive state ---
 @router.post("/update_channel_active")
 def update_channel_active(channel_id: int = Form(...), active: bool = Form(...)):
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    c.execute("UPDATE channels SET active = ? WHERE id = ?", (1 if active else 0, channel_id))
-    conn.commit()
-    conn.close()
-    # Rebuild the combined EPG so that changes are reflected immediately.
-    build_combined_epg()
+    """
+    Instead of writing directly, queue a task that handles
+    the DB update + EPG rebuild in a single transaction.
+    """
+    def db_task():
+        import sqlite3
+        conn = sqlite3.connect(DB_FILE)
+        c = conn.cursor()
+        try:
+            c.execute("UPDATE channels SET active = ? WHERE id = ?",
+                      (1 if active else 0, channel_id))
+            conn.commit()
+        except Exception as e:
+            print(f"[DB Task] Error updating channel active status: {e}")
+        finally:
+            conn.close()
+
+        # Optionally rebuild EPG in the same task if needed
+        try:
+            build_combined_epg()
+        except Exception as e:
+            print(f"[DB Task] Error rebuilding EPG: {e}")
+
+    # Submit the task to the queue
+    db_write_queue.put(db_task)
+    
+    # Return immediately to the user
     return JSONResponse({"success": True})
 
 @router.post("/update_channels_active_bulk")
@@ -252,43 +272,68 @@ def update_channel_category(channel_id: int = Form(...), new_category: str = For
 
 @router.get("/api/epg_entries")
 def get_epg_entries(search: str = Query("", min_length=0), raw_file: str = Query("", min_length=0)):
+    from .config import EPG_COLORS_FILE
+    import json
+    try:
+        with open(EPG_COLORS_FILE, "r") as f:
+            color_mapping = json.load(f)
+    except Exception:
+        color_mapping = {}
+        
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
+    
     if search:
         if raw_file:
             c.execute("""
-                SELECT DISTINCT rec.display_name
+                SELECT rec.display_name, MIN(rep.raw_epg_file) as raw_epg_file
                 FROM raw_epg_channels rec
                 JOIN raw_epg_programs rep ON rep.raw_channel_id = rec.raw_id
                 WHERE LOWER(rec.display_name) LIKE LOWER(?)
                   AND rep.raw_epg_file = ?
+                GROUP BY rec.display_name
                 ORDER BY rec.display_name
             """, (f"%{search.lower()}%", raw_file))
         else:
             c.execute("""
-                SELECT DISTINCT display_name
-                FROM raw_epg_channels
-                WHERE LOWER(display_name) LIKE LOWER(?)
-                ORDER BY display_name
+                SELECT rec.display_name, MIN(rep.raw_epg_file) as raw_epg_file
+                FROM raw_epg_channels rec
+                LEFT JOIN raw_epg_programs rep ON rep.raw_channel_id = rec.raw_id
+                WHERE LOWER(rec.display_name) LIKE LOWER(?)
+                GROUP BY rec.display_name
+                ORDER BY rec.display_name
             """, (f"%{search.lower()}%",))
     else:
         if raw_file:
             c.execute("""
-                SELECT DISTINCT rec.display_name
+                SELECT rec.display_name, MIN(rep.raw_epg_file) as raw_epg_file
                 FROM raw_epg_channels rec
                 JOIN raw_epg_programs rep ON rep.raw_channel_id = rec.raw_id
                 WHERE rep.raw_epg_file = ?
+                GROUP BY rec.display_name
                 ORDER BY rec.display_name
             """, (raw_file,))
         else:
             c.execute("""
-                SELECT DISTINCT display_name
-                FROM raw_epg_channels
-                ORDER BY display_name
+                SELECT rec.display_name, MIN(rep.raw_epg_file) as raw_epg_file
+                FROM raw_epg_channels rec
+                LEFT JOIN raw_epg_programs rep ON rep.raw_channel_id = rec.raw_id
+                GROUP BY rec.display_name
+                ORDER BY rec.display_name
             """)
     rows = c.fetchall()
     conn.close()
-    results = [row[0] for row in rows if row[0]]
+    
+    results = []
+    for (display_name, epg_file) in rows:
+        if not display_name:
+            continue
+        # Default color if no color is found:
+        color = "#cccccc"
+        if epg_file and epg_file in color_mapping:
+            color = color_mapping[epg_file]
+            print(display_name, epg_file, color)
+        results.append({"name": display_name, "color": color})
     return JSONResponse(results)
 
 @router.post("/update_epg_entry")

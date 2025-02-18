@@ -3,7 +3,7 @@ from fastapi.staticfiles import StaticFiles
 from .routes import router as app_router
 from .status import router as status_router
 from .settings import router as settings_router
-from .database import init_db
+from .database import init_db, start_db_worker, stop_worker
 from .m3u import load_m3u_files
 from .config import LOGOS_DIR, CUSTOM_LOGOS_DIR
 
@@ -25,3 +25,11 @@ app.include_router(status_router)
 def startup_event():
     init_db()         # Create and update the database schema
     load_m3u_files()  # Load the M3U files (this will also update the EPG)
+    global db_thread
+    db_thread = start_db_worker()
+    
+@app.on_event("shutdown")
+def on_shutdown():
+    # Signal the worker to stop and wait for it to exit gracefully
+    stop_worker.set()
+    db_thread.join(timeout=2)
