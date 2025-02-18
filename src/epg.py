@@ -32,7 +32,7 @@ def parse_xmltv_datetime(dt_str):
     return utc_dt.strftime("%Y%m%d%H%M%S") + " +0000"
 
 # ====================================================
-# 2) Parse raw EPG files into 'raw_epg_*' tables (including icon and source file)
+# 2) Parse raw EPG files into 'raw_epg_*' tables
 # ====================================================
 def parse_raw_epg_files():
     print("[INFO] Parsing raw EPG files...")
@@ -52,7 +52,7 @@ def parse_raw_epg_files():
     c.execute("DELETE FROM raw_epg_channels")
     c.execute("DELETE FROM raw_epg_programs")
 
-    # Create raw_epg_channels table.
+    # Create raw_epg_channels table if needed.
     c.execute('''
         CREATE TABLE IF NOT EXISTS raw_epg_channels (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -61,7 +61,7 @@ def parse_raw_epg_files():
         )
     ''')
 
-    # Create raw_epg_programs table with an extra icon_url column and the new raw_epg_file column.
+    # Create raw_epg_programs table if needed.
     c.execute('''
         CREATE TABLE IF NOT EXISTS raw_epg_programs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -75,7 +75,7 @@ def parse_raw_epg_files():
         )
     ''')
 
-    # Ensure the icon_url column exists.
+    # Ensure columns exist.
     c.execute("PRAGMA table_info(raw_epg_programs)")
     columns = [col_info[1] for col_info in c.fetchall()]
     if "icon_url" not in columns:
@@ -83,8 +83,6 @@ def parse_raw_epg_files():
             c.execute("ALTER TABLE raw_epg_programs ADD COLUMN icon_url TEXT")
         except Exception as e:
             print(f"[WARNING] Could not add icon_url column: {e}")
-
-    # Ensure the raw_epg_file column exists.
     if "raw_epg_file" not in columns:
         try:
             c.execute("ALTER TABLE raw_epg_programs ADD COLUMN raw_epg_file TEXT")
@@ -127,12 +125,8 @@ def parse_raw_epg_files():
                 title_text = title_el.text.strip() if (title_el is not None and title_el.text) else ""
                 desc_el = prog_el.find("desc")
                 desc_text = desc_el.text.strip() if (desc_el is not None and desc_el.text) else ""
-                # Parse optional icon element.
                 icon_el = prog_el.find("icon")
-                icon_src = ""
-                if icon_el is not None:
-                    icon_src = icon_el.get("src", "").strip()
-                # Insert the program with the source file information (using basename for clarity).
+                icon_src = icon_el.get("src", "").strip() if icon_el is not None else ""
                 c.execute("""
                     INSERT INTO raw_epg_programs (raw_channel_id, start, stop, title, description, icon_url, raw_epg_file)
                     VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -145,7 +139,7 @@ def parse_raw_epg_files():
     print("[INFO] Finished populating raw_epg_* tables.")
 
 # ====================================================
-# 3) Build combined EPG from raw data (full rebuild, including icon rewriting)
+# 3) Build combined EPG from raw data (full rebuild)
 # ====================================================
 def build_combined_epg():
     print("[INFO] Building combined EPG from raw DB...")
@@ -169,7 +163,7 @@ def build_combined_epg():
         db_name = db_name or ""
         db_logo = db_logo or ""
 
-        # Build the channel element.
+        # Build the <channel> element using channel_number as the ID.
         channel_el = ET.Element("channel", id=str(channel_number))
         disp_el = ET.Element("display-name")
         disp_el.text = db_name
@@ -183,25 +177,34 @@ def build_combined_epg():
             channel_el.append(icon_el)
         combined_root.append(channel_el)
 
-        # Optionally, save channel name in epg_channels table.
+        # Insert epg_channels row if not present
         c.execute("INSERT OR IGNORE INTO epg_channels (name) VALUES (?)", (db_name,))
 
         # Find matching raw channel IDs.
         raw_ids = []
         if db_tvg_name:
-            c.execute(
-                "SELECT DISTINCT raw_id FROM raw_epg_channels WHERE raw_id = ? OR display_name = ?",
-                (db_tvg_name, db_tvg_name)
-            )
+            c.execute("""
+                SELECT DISTINCT raw_id 
+                  FROM raw_epg_channels 
+                 WHERE raw_id = ? OR display_name = ?
+            """, (db_tvg_name, db_tvg_name))
             raw_ids = [r[0] for r in c.fetchall()]
+            if not raw_ids:
+                c.execute("""
+                    SELECT DISTINCT raw_id
+                      FROM raw_epg_channels
+                     WHERE display_name = ?
+                """, (db_name,))
+                raw_ids = [r[0] for r in c.fetchall()]
         else:
-            c.execute(
-                "SELECT DISTINCT raw_id FROM raw_epg_channels WHERE display_name = ?",
-                (db_name,)
-            )
+            c.execute("""
+                SELECT DISTINCT raw_id
+                  FROM raw_epg_channels
+                 WHERE display_name = ?
+            """, (db_name,))
             raw_ids = [r[0] for r in c.fetchall()]
 
-        # For each matching raw channel, pull programme data.
+        # For each matching raw channel, pull programme data
         for rid in raw_ids:
             c.execute("""
                 SELECT start, stop, title, description, icon_url
@@ -223,7 +226,6 @@ def build_combined_epg():
                 t_el.text = title_txt
                 d_el = ET.SubElement(prog_el, "desc")
                 d_el.text = desc_txt
-                # If an icon was provided, rewrite its URL.
                 if icon_url:
                     filename = os.path.basename(icon_url)
                     new_icon_url = f"{BASE_URL}/schedulesdirect_cache/{filename}"
@@ -240,35 +242,40 @@ def build_combined_epg():
     print(f"[SUCCESS] Combined EPG saved as {combined_epg_file}")
 
 # ====================================================
-# 4) Update program data for a single channel (partial reparse)
+# 4) Update program data for a single channel
 # ====================================================
-def update_program_data_for_channel(channel_id: int):
+def update_program_data_for_channel(db_id: int):
     """
-    1) Fetch the channel's tvg_name (and name) from 'channels'.
-    2) Remove old programme data from epg_programs & EPG.xml for that channel.
-    3) Find matching raw EPG data from 'raw_epg_*' tables for that tvg_name or name.
-    4) Insert it into epg_programs & EPG.xml (only for this channel).
+    CHANGED:
+      - We now fetch channel_number from the channel with the given DB ID.
+      - Then we remove old EPG data using that channel_number, 
+        and re-insert partial EPG for that channel_number.
     """
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-    c.execute("SELECT tvg_name, name, logo_url FROM channels WHERE id = ?", (channel_id,))
+    c.execute("SELECT channel_number, tvg_name, name, logo_url FROM channels WHERE id = ?", (db_id,))
     row = c.fetchone()
     if not row:
         conn.close()
-        print(f"[ERROR] Channel {channel_id} not found.")
+        print(f"[ERROR] Channel ID {db_id} not found.")
         return
-    db_tvg_name, db_name, db_logo = row
+    channel_number, db_tvg_name, db_name, db_logo = row
     conn.close()
+
+    # Remove old programs from DB and EPG.xml using channel_number, 
+    # because epg_programs.channel_tvg_name = str(channel_number).
+    _remove_programs_from_db(channel_number)
+    _remove_programs_from_xml(channel_number)
+
+    # Reload the partial EPG for that channel_number from raw_epg_* 
+    # (matching tvg_name or name).
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
 
     db_tvg_name = db_tvg_name or ""
     db_name = db_name or ""
 
-    _remove_programs_from_db(channel_id)
-    _remove_programs_from_xml(channel_id)
-
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-
+    # Find raw IDs in raw_epg_channels
     raw_ids = []
     if db_tvg_name:
         c.execute("""
@@ -277,7 +284,7 @@ def update_program_data_for_channel(channel_id: int):
              WHERE raw_id = ? OR display_name = ?
         """, (db_tvg_name, db_tvg_name))
         raw_ids = [r[0] for r in c.fetchall()]
-        if not raw_ids:  # Fallback: if no matching raw_id, try using the channel name
+        if not raw_ids:
             c.execute("""
                 SELECT DISTINCT raw_id
                   FROM raw_epg_channels
@@ -294,7 +301,7 @@ def update_program_data_for_channel(channel_id: int):
 
     combined_epg_file = os.path.join(MODIFIED_EPG_DIR, "EPG.xml")
     if not os.path.exists(combined_epg_file):
-        print("[WARN] EPG.xml not found; you may need to build_combined_epg first.")
+        print("[WARN] EPG.xml not found; build_combined_epg may be needed first.")
         conn.close()
         return
 
@@ -306,14 +313,14 @@ def update_program_data_for_channel(channel_id: int):
         conn.close()
         return
 
-    # Ensure <channel> node is present.
+    # Ensure <channel> node is present or create it
     channel_el = None
     for ch_el in root.findall("channel"):
-        if ch_el.get("id") == str(channel_id):
+        if ch_el.get("id") == str(channel_number):
             channel_el = ch_el
             break
     if channel_el is None:
-        channel_el = ET.Element("channel", {"id": str(channel_id)})
+        channel_el = ET.Element("channel", {"id": str(channel_number)})
         disp_el = ET.SubElement(channel_el, "display-name")
         disp_el.text = db_name
         if db_logo:
@@ -324,6 +331,7 @@ def update_program_data_for_channel(channel_id: int):
             ET.SubElement(channel_el, "icon", {"src": full_logo_url})
         root.append(channel_el)
 
+    # Insert new program data
     for rid in raw_ids:
         c.execute("""
             SELECT start, stop, title, description, icon_url
@@ -332,12 +340,15 @@ def update_program_data_for_channel(channel_id: int):
         """, (rid,))
         raw_progs = c.fetchall()
         for (start_t, stop_t, title_txt, desc_txt, icon_url) in raw_progs:
+            # epg_programs DB
             c.execute("""
                 INSERT INTO epg_programs (channel_tvg_name, start, stop, title, description)
                 VALUES (?, ?, ?, ?, ?)
-            """, (str(channel_id), start_t, stop_t, title_txt, desc_txt))
+            """, (str(channel_number), start_t, stop_t, title_txt, desc_txt))
+
+            # EPG.xml node
             prog_el = ET.Element("programme", {
-                "channel": str(channel_id),
+                "channel": str(channel_number),
                 "start": start_t,
                 "stop": stop_t
             })
@@ -356,16 +367,23 @@ def update_program_data_for_channel(channel_id: int):
     conn.close()
 
     tree.write(combined_epg_file, encoding="utf-8", xml_declaration=True)
-    print(f"[INFO] Updated EPG for channel {channel_id} in {combined_epg_file}")
+    print(f"[INFO] Updated partial EPG for channel_number {channel_number} in {combined_epg_file}")
 
-def _remove_programs_from_db(channel_id: int):
+def _remove_programs_from_db(channel_number: int):
+    """
+    CHANGED: This now accepts channel_number, because epg_programs.channel_tvg_name 
+    is stored as the channel_number in string form.
+    """
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-    c.execute("DELETE FROM epg_programs WHERE channel_tvg_name = ?", (str(channel_id),))
+    c.execute("DELETE FROM epg_programs WHERE channel_tvg_name = ?", (str(channel_number),))
     conn.commit()
     conn.close()
 
-def _remove_programs_from_xml(channel_id: int):
+def _remove_programs_from_xml(channel_number: int):
+    """
+    CHANGED: Also keyed by channel_number in <programme channel="...">
+    """
     combined_epg_file = os.path.join(MODIFIED_EPG_DIR, "EPG.xml")
     if not os.path.exists(combined_epg_file):
         return
@@ -374,16 +392,35 @@ def _remove_programs_from_xml(channel_id: int):
         root = tree.getroot()
         removed_count = 0
         for prog_el in list(root.findall("programme")):
-            if prog_el.get("channel") == str(channel_id):
+            if prog_el.get("channel") == str(channel_number):
                 root.remove(prog_el)
                 removed_count += 1
         if removed_count > 0:
             tree.write(combined_epg_file, encoding="utf-8", xml_declaration=True)
-            print(f"[INFO] Removed {removed_count} old programmes for channel {channel_id}.")
+            print(f"[INFO] Removed {removed_count} old programmes for channel_number {channel_number}.")
     except Exception as e:
         print(f"[ERROR] Could not remove old programmes from EPG.xml: {e}")
 
 def update_channel_logo_in_epg(channel_id: int, new_logo: str):
+    """
+    Unchanged logic, but keep in mind this uses channel_id or channel_number?
+    Actually, it calls <channel id="channel_number"> if you are consistent 
+    in your build_combined_epg. So if you want to update the EPG channel node's icon, 
+    we must do the same approach as above:
+    1) fetch channel_number from the channel with the given DB ID
+    2) update <channel id="channel_number">
+    """
+    # CHANGED: fetch channel_number from DB
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("SELECT channel_number FROM channels WHERE id = ?", (channel_id,))
+    row = c.fetchone()
+    conn.close()
+    if not row:
+        print(f"[ERROR] update_channel_logo_in_epg: no channel found with id={channel_id}")
+        return
+    channel_number = row[0]
+
     combined_epg_file = os.path.join(MODIFIED_EPG_DIR, "EPG.xml")
     if not os.path.exists(combined_epg_file):
         return
@@ -392,7 +429,7 @@ def update_channel_logo_in_epg(channel_id: int, new_logo: str):
         root = tree.getroot()
         updated = False
         for channel_el in root.findall("channel"):
-            if channel_el.get("id") == str(channel_id):
+            if channel_el.get("id") == str(channel_number):
                 if new_logo.startswith("/"):
                     full_logo_url = f"{BASE_URL}{new_logo}"
                 else:
@@ -407,11 +444,24 @@ def update_channel_logo_in_epg(channel_id: int, new_logo: str):
                 break
         if updated:
             tree.write(combined_epg_file, encoding="utf-8", xml_declaration=True)
-            print(f"[INFO] Updated channel {channel_id} logo in EPG.xml.")
+            print(f"[INFO] Updated channel_number {channel_number} logo in EPG.xml.")
     except Exception as e:
         print(f"[ERROR] update_channel_logo_in_epg: {e}")
 
 def update_channel_metadata_in_epg(channel_id: int, new_name: str, new_logo: str):
+    """
+    Similar approach: fetch channel_number from the DB, update <channel id=channel_number>.
+    """
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("SELECT channel_number FROM channels WHERE id = ?", (channel_id,))
+    row = c.fetchone()
+    conn.close()
+    if not row:
+        print(f"[ERROR] Could not update channel {channel_id} metadata in EPG.xml: channel not found.")
+        return
+    channel_number = row[0]
+
     combined_epg_file = os.path.join(MODIFIED_EPG_DIR, "EPG.xml")
     if not os.path.exists(combined_epg_file):
         return
@@ -419,7 +469,7 @@ def update_channel_metadata_in_epg(channel_id: int, new_name: str, new_logo: str
         tree = ET.parse(combined_epg_file)
         root = tree.getroot()
         for ch_el in root.findall("channel"):
-            if ch_el.get("id") == str(channel_id):
+            if ch_el.get("id") == str(channel_number):
                 disp_el = ch_el.find("display-name")
                 if disp_el is not None:
                     disp_el.text = new_name
@@ -438,9 +488,16 @@ def update_channel_metadata_in_epg(channel_id: int, new_name: str, new_logo: str
                     icon_el = ET.Element("icon", src=full_logo_url)
                     ch_el.append(icon_el)
     except Exception as e:
-        print(f"[ERROR] Could not update channel {channel_id} metadata in EPG.xml: {e}")
+        print(f"[ERROR] Could not update channel_number {channel_number} metadata in EPG.xml: {e}")
 
 def update_modified_epg(old_id: int, new_id: int, swap: bool):
+    """
+    Here old_id and new_id refer to the channel_number, not DB IDs.
+    We'll also fix the DB epg_programs table references in the same call.
+    """
+    # CHANGED: also fix references in the DB
+    update_programs_db_on_swap(old_id, new_id, swap)
+
     combined_epg_file = os.path.join(MODIFIED_EPG_DIR, "EPG.xml")
     if not os.path.exists(combined_epg_file):
         return
@@ -467,27 +524,50 @@ def update_modified_epg(old_id: int, new_id: int, swap: bool):
             for prog in root.findall("programme"):
                 if prog.get("channel") == str(old_id):
                     prog.set("channel", str(new_id))
+
         tree.write(combined_epg_file, encoding="utf-8", xml_declaration=True)
         print(f"[INFO] update_modified_epg: changed channel {old_id} -> {new_id} (swap={swap})")
     except Exception as e:
         print(f"[ERROR] update_modified_epg: {e}")
 
+
+def update_programs_db_on_swap(old_num: int, new_num: int, do_swap: bool):
+    """
+    Fix references in the epg_programs table, 
+    where channel_tvg_name is a string of the channel_number.
+    If do_swap == True, we do a 3-step swap using a temp value.
+    Otherwise, it's just a direct rename from old_num to new_num.
+    """
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+
+    if do_swap:
+        # pick a temp channel name that won't conflict
+        temp_str = f"swaptemp_{random.randint(1,999999)}"
+        c.execute("UPDATE epg_programs SET channel_tvg_name = ? WHERE channel_tvg_name = ?", (temp_str, str(old_num)))
+        c.execute("UPDATE epg_programs SET channel_tvg_name = ? WHERE channel_tvg_name = ?", (str(old_num), str(new_num)))
+        c.execute("UPDATE epg_programs SET channel_tvg_name = ? WHERE channel_tvg_name = ?", (str(new_num), temp_str))
+    else:
+        c.execute("UPDATE epg_programs SET channel_tvg_name = ? WHERE channel_tvg_name = ?", (str(new_num), str(old_num)))
+
+    conn.commit()
+    conn.close()
+    print(f"[INFO] epg_programs references updated from {old_num} to {new_num}, swap={do_swap}.")
+    
+    
 # ====================================================
-# EPG Colors functionality integrated into epg.py using config settings.
+# EPG Colors functionality remains unchanged
 # ====================================================
 def get_color_for_epg_file(filename):
-    # Use the EPG_COLORS_FILE from the config.
     mapping = load_epg_color_mapping()
     if filename in mapping:
         return mapping[filename]
-    # Generate a random hex color, e.g. "#A1B2C3"
     color = "#%06x" % random.randint(0, 0xFFFFFF)
     mapping[filename] = color
     save_epg_color_mapping(mapping)
     return color
 
 def load_epg_color_mapping():
-    # Ensure the directory for the colors file exists.
     directory = os.path.dirname(EPG_COLORS_FILE)
     if not os.path.exists(directory):
         os.makedirs(directory, exist_ok=True)
@@ -505,3 +585,4 @@ def load_epg_color_mapping():
 def save_epg_color_mapping(mapping):
     with open(EPG_COLORS_FILE, "w") as f:
         json.dump(mapping, f, indent=4)
+

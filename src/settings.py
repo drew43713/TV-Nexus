@@ -12,17 +12,14 @@ templates = Jinja2Templates(directory="templates")
 
 @router.get("/settings", response_class=HTMLResponse)
 def settings_page(request: Request):
-    # List EPG files.
     epg_files = sorted(
         [f for f in os.listdir(EPG_DIR) if f.lower().endswith((".xml", ".xmltv", ".gz"))]
     ) if os.path.exists(EPG_DIR) else []
     
-    # Build a mapping for each EPG file's color.
     epg_colors = {}
     for file in epg_files:
         epg_colors[file] = get_color_for_epg_file(file)
     
-    # Find the first (and only) M3U file.
     m3u_file = None
     if os.path.exists(M3U_DIR):
         for f in os.listdir(M3U_DIR):
@@ -30,7 +27,6 @@ def settings_page(request: Request):
                 m3u_file = f
                 break
     
-    # Load current config (tuner count).
     try:
         with open(CONFIG_FILE_PATH, "r") as f:
             current_config = json.load(f)
@@ -38,7 +34,6 @@ def settings_page(request: Request):
         current_config = {}
     tuner_count = current_config.get("TUNER_COUNT", 1)
     
-    # Get query parameters for confirmation messages.
     updated = request.query_params.get("updated", None)
     epg_upload_success = request.query_params.get("epg_upload_success", None)
     m3u_upload_success = request.query_params.get("m3u_upload_success", None)
@@ -93,7 +88,7 @@ async def upload_epg(file: UploadFile = File(...)):
     
     try:
         parse_raw_epg_files()
-        build_combined_epg()
+        build_combined_epg()  # Keep the global rebuild after uploading a new EPG
     except Exception as e:
         raise HTTPException(status_code=500, detail="Error re-parsing EPG files: " + str(e))
     
@@ -133,7 +128,7 @@ async def upload_m3u(file: UploadFile = File(...)):
 def parse_epg():
     try:
         parse_raw_epg_files()
-        build_combined_epg()
+        build_combined_epg()  # Full rebuild on explicit user request
         return {"success": True, "message": "EPG parsed successfully."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -149,7 +144,7 @@ def delete_epg(filename: str = Form(...)):
         return {"success": False, "message": "Error deleting file: " + str(e)}
     try:
         parse_raw_epg_files()
-        build_combined_epg()
+        build_combined_epg()  # Rebuild after removing an EPG file
     except Exception as e:
         return {"success": False, "message": "Error re-parsing EPG files: " + str(e)}
     return {"success": True, "message": "EPG file deleted and EPG re-parsed successfully."}
