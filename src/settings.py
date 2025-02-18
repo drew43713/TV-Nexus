@@ -6,6 +6,7 @@ from fastapi.responses import RedirectResponse, HTMLResponse
 from fastapi.templating import Jinja2Templates
 from .config import CONFIG_FILE_PATH, M3U_DIR, EPG_DIR, MODIFIED_EPG_DIR, DB_FILE, LOGOS_DIR, CUSTOM_LOGOS_DIR, TUNER_COUNT, config
 from .epg import parse_raw_epg_files, build_combined_epg, load_epg_color_mapping, save_epg_color_mapping, get_color_for_epg_file
+from .tasks import start_epg_reparse_task
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
@@ -57,34 +58,38 @@ def settings_page(request: Request):
     })
 
 @router.post("/update_config")
-def update_config(tuner_count: int = Form(...), reparse_epg_interval: int = Form(...)):
+async def update_config(tuner_count: int = Form(...), reparse_epg_interval: int = Form(...)):
     """
-    Updates TUNER_COUNT and REPARSE_EPG_INTERVAL in both the config.json file
-    and the in-memory config dictionary so changes take effect without a restart.
+    Updates TUNER_COUNT and REPARSE_EPG_INTERVAL in config.json
+    and restarts the EPG re-parse background task so changes take effect immediately.
     """
     # 1) Load the current config from disk
     try:
         with open(CONFIG_FILE_PATH, "r") as f:
             current_config = json.load(f)
     except Exception:
-        raise HTTPException(status_code=500, detail="Failed to load configuration from disk.")
-
+        raise HTTPException(status_code=500, detail="Failed to load configuration.")
+    
     # 2) Update the Python dictionary
     current_config["TUNER_COUNT"] = tuner_count
     current_config["REPARSE_EPG_INTERVAL"] = reparse_epg_interval
-
-    # 3) Update our in-memory config as well (so background tasks see the new interval)
-    config["TUNER_COUNT"] = tuner_count
-    config["REPARSE_EPG_INTERVAL"] = reparse_epg_interval
-
-    # 4) Write the updated config back to disk
+    
+    # 3) Write updated config back to disk
     try:
         with open(CONFIG_FILE_PATH, "w") as f:
             json.dump(current_config, f, indent=4)
     except Exception:
-        raise HTTPException(status_code=500, detail="Failed to save configuration to disk.")
+        raise HTTPException(status_code=500, detail="Failed to save configuration.")
+    
+    # 4) Also update our in-memory config
+    config["TUNER_COUNT"] = tuner_count
+    config["REPARSE_EPG_INTERVAL"] = reparse_epg_interval
+    
+    # 5) Cancel the old re-parse task and start a new one right away
+    #    because we are in an async route, we can safely call 'await'
+    await start_epg_reparse_task()
 
-    # 5) Redirect the user back to the settings page with a success message
+    # Redirect user to show success
     return RedirectResponse(url="/settings?updated=true", status_code=303)
 
 @router.post("/upload_epg")
