@@ -17,7 +17,9 @@ DEFAULT_CONFIG = {
     "TUNER_COUNT": 1,
     # New optional variable:
     "DOMAIN_NAME": "",   # e.g. "mydomain.com"
-    "EPG_COLORS_FILE": os.path.join("config", "epg", "epg_colors.json")
+    "EPG_COLORS_FILE": os.path.join("config", "epg", "epg_colors.json"),
+    # New: how often to automatically re-parse EPG (in minutes); 0 = disabled
+    "REPARSE_EPG_INTERVAL": 1440  # 1440 = 24 hours
 }
 
 # Ensure the config directory exists.
@@ -41,8 +43,8 @@ if os.path.exists(CONFIG_FILE_PATH):
 for key in config.keys():
     env_value = os.environ.get(key)
     if env_value is not None:
-        # For numeric values like PORT and TUNER_COUNT, store as int.
-        if key in ["PORT", "TUNER_COUNT"]:
+        # For numeric values like PORT, TUNER_COUNT, and REPARSE_EPG_INTERVAL, store as int.
+        if key in ["PORT", "TUNER_COUNT", "REPARSE_EPG_INTERVAL"]:
             try:
                 config[key] = int(env_value)
             except ValueError:
@@ -72,7 +74,8 @@ LOGOS_DIR = config["LOGOS_DIR"]
 CUSTOM_LOGOS_DIR = config["CUSTOM_LOGOS_DIR"]
 TUNER_COUNT = config["TUNER_COUNT"]
 DOMAIN_NAME = config["DOMAIN_NAME"]
-EPG_COLORS_FILE = config["EPG_COLORS_FILE"]  # New: path for the EPG colors file
+EPG_COLORS_FILE = config["EPG_COLORS_FILE"]
+REPARSE_EPG_INTERVAL = config["REPARSE_EPG_INTERVAL"]  # In minutes
 
 def load_config():
     try:

@@ -4,7 +4,7 @@ import shutil
 from fastapi import APIRouter, Request, Form, HTTPException, UploadFile, File
 from fastapi.responses import RedirectResponse, HTMLResponse
 from fastapi.templating import Jinja2Templates
-from .config import CONFIG_FILE_PATH, M3U_DIR, EPG_DIR, MODIFIED_EPG_DIR, DB_FILE, LOGOS_DIR, CUSTOM_LOGOS_DIR, TUNER_COUNT
+from .config import CONFIG_FILE_PATH, M3U_DIR, EPG_DIR, MODIFIED_EPG_DIR, DB_FILE, LOGOS_DIR, CUSTOM_LOGOS_DIR, TUNER_COUNT, config
 from .epg import parse_raw_epg_files, build_combined_epg, load_epg_color_mapping, save_epg_color_mapping, get_color_for_epg_file
 
 router = APIRouter()
@@ -27,12 +27,16 @@ def settings_page(request: Request):
                 m3u_file = f
                 break
     
+    # Load current config
     try:
         with open(CONFIG_FILE_PATH, "r") as f:
             current_config = json.load(f)
     except Exception:
         current_config = {}
+    
     tuner_count = current_config.get("TUNER_COUNT", 1)
+    # Pull the REPARSE_EPG_INTERVAL from the config, default to 1440 if not present
+    reparse_interval = current_config.get("REPARSE_EPG_INTERVAL", 1440)
     
     updated = request.query_params.get("updated", None)
     epg_upload_success = request.query_params.get("epg_upload_success", None)
@@ -45,6 +49,7 @@ def settings_page(request: Request):
         "epg_colors": epg_colors,
         "m3u_file": m3u_file,
         "tuner_count": tuner_count,
+        "reparse_interval": reparse_interval,  # Pass to template
         "updated": updated,
         "epg_upload_success": epg_upload_success,
         "m3u_upload_success": m3u_upload_success,
@@ -52,21 +57,34 @@ def settings_page(request: Request):
     })
 
 @router.post("/update_config")
-def update_config(tuner_count: int = Form(...)):
+def update_config(tuner_count: int = Form(...), reparse_epg_interval: int = Form(...)):
+    """
+    Updates TUNER_COUNT and REPARSE_EPG_INTERVAL in both the config.json file
+    and the in-memory config dictionary so changes take effect without a restart.
+    """
+    # 1) Load the current config from disk
     try:
         with open(CONFIG_FILE_PATH, "r") as f:
             current_config = json.load(f)
     except Exception:
-        raise HTTPException(status_code=500, detail="Failed to load configuration.")
-    
+        raise HTTPException(status_code=500, detail="Failed to load configuration from disk.")
+
+    # 2) Update the Python dictionary
     current_config["TUNER_COUNT"] = tuner_count
-    
+    current_config["REPARSE_EPG_INTERVAL"] = reparse_epg_interval
+
+    # 3) Update our in-memory config as well (so background tasks see the new interval)
+    config["TUNER_COUNT"] = tuner_count
+    config["REPARSE_EPG_INTERVAL"] = reparse_epg_interval
+
+    # 4) Write the updated config back to disk
     try:
         with open(CONFIG_FILE_PATH, "w") as f:
             json.dump(current_config, f, indent=4)
     except Exception:
-        raise HTTPException(status_code=500, detail="Failed to save configuration.")
-    
+        raise HTTPException(status_code=500, detail="Failed to save configuration to disk.")
+
+    # 5) Redirect the user back to the settings page with a success message
     return RedirectResponse(url="/settings?updated=true", status_code=303)
 
 @router.post("/upload_epg")

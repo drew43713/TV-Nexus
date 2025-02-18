@@ -168,6 +168,7 @@
       <a href="/settings" class="active-tab">TV Nexus - Settings</a>
     </nav>
     <h1>TV Nexus Settings</h1>
+
     <!-- Confirmation banners -->
     {% if updated %}
     <div class="confirmation" id="confirmation-message">
@@ -189,6 +190,7 @@
       EPG files parsed successfully!
     </div>
     {% endif %}
+
     <!-- M3U Files Section (at the top) -->
     <div class="section">
       <h2>M3U File</h2>
@@ -206,6 +208,7 @@
       <p>No M3U file loaded.</p>
       {% endif %}
     </div>
+
     <!-- EPG Files Section -->
     <div class="section">
       <h2>EPG Files</h2>
@@ -232,11 +235,33 @@
           {% for file in epg_files %}
           <li>
             <!-- Clickable colored dot that triggers the hidden color chooser -->
-            <span class="epg-color-dot" style="display:inline-block; width:10px; height:10px; border-radius:50%; background: {{ epg_colors[file] }}; margin-right:5px; cursor:pointer;"></span>
+            <span
+              class="epg-color-dot"
+              style="
+                display: inline-block;
+                width: 10px;
+                height: 10px;
+                border-radius: 50%;
+                background: {{ epg_colors[file] }};
+                margin-right: 5px;
+                cursor: pointer;
+              "
+            ></span>
             {{ file }}
-            <input type="color" class="epg-color-picker" data-filename="{{ file }}" value="{{ epg_colors[file] }}" style="display:none;">
-            <form action="/delete_epg" method="post" class="delete-epg-form" style="display:inline;">
-              <input type="hidden" name="filename" value="{{ file }}">
+            <input
+              type="color"
+              class="epg-color-picker"
+              data-filename="{{ file }}"
+              value="{{ epg_colors[file] }}"
+              style="display: none;"
+            />
+            <form
+              action="/delete_epg"
+              method="post"
+              class="delete-epg-form"
+              style="display: inline;"
+            >
+              <input type="hidden" name="filename" value="{{ file }}" />
               <button type="submit">Delete</button>
             </form>
           </li>
@@ -247,17 +272,37 @@
       <p>No EPG files loaded.</p>
       {% endif %}
     </div>
-    <!-- Tuner Count Section -->
+
+    <!-- Configuration Section (Tuner Count + Reparse Interval) -->
     <div class="section">
-      <h2>Tuner Count</h2>
+      <h2>Configuration</h2>
       <div class="config-form">
         <form action="/update_config" method="post">
-          <label for="tuner_count">Number of Tuners:</label>
-          <input type="number" id="tuner_count" name="tuner_count" value="{{ tuner_count }}" min="1" />
+          <div style="margin-bottom: 10px;">
+            <label for="tuner_count">Number of Tuners:</label>
+            <input
+              type="number"
+              id="tuner_count"
+              name="tuner_count"
+              value="{{ tuner_count }}"
+              min="1"
+            />
+          </div>
+          <div style="margin-bottom: 10px;">
+            <label for="reparse_epg_interval">Reparse EPG Interval (minutes):</label>
+            <input
+              type="number"
+              id="reparse_epg_interval"
+              name="reparse_epg_interval"
+              value="{{ reparse_interval }}"
+              min="0"
+            />
+          </div>
           <button type="submit">Update</button>
         </form>
       </div>
     </div>
+
     <!-- Stream Status Section -->
     <div class="section">
       <h2>Stream Status</h2>
@@ -265,11 +310,13 @@
         <div id="stream-status-content">Loading stream status...</div>
       </div>
     </div>
+
     <script>
       // Global flags to pause stream status updates during any EPG operation.
       let epgParsingInProgress = false;
       let epgUploadingInProgress = false;
       let epgDeletingInProgress = false;
+
       // Hide confirmation messages after 5 seconds.
       setTimeout(() => {
         const conf = document.getElementById("confirmation-message");
@@ -285,6 +332,7 @@
         const deleteEpgStatus = document.getElementById("delete-epg-status");
         if (deleteEpgStatus) deleteEpgStatus.style.display = "none";
       }, 5000);
+
       // Remove query parameters from URL after page load.
       window.addEventListener("DOMContentLoaded", () => {
         const urlParams = new URLSearchParams(window.location.search);
@@ -296,10 +344,12 @@
         ) {
           window.history.replaceState({}, document.title, "/settings");
         }
+
         updateStreamStatus();
         setInterval(updateStreamStatus, 5000);
+
         // Auto-refresh page 3 seconds after any non-AJAX form submission.
-        document.querySelectorAll(".config-form form").forEach(form => {
+        document.querySelectorAll(".config-form form").forEach((form) => {
           if (!form.id) {
             form.addEventListener("submit", () => {
               setTimeout(() => {
@@ -308,30 +358,37 @@
             });
           }
         });
+
         const uploadForm = document.getElementById("upload-epg-form");
         if (uploadForm) {
           uploadForm.addEventListener("submit", uploadEPG);
         }
-        document.querySelectorAll(".delete-epg-form").forEach(form => {
+
+        document.querySelectorAll(".delete-epg-form").forEach((form) => {
           form.addEventListener("submit", deleteEPG);
         });
+
         // Attach event listener to the color dot to trigger its hidden color picker.
-        document.querySelectorAll(".epg-color-dot").forEach(dot => {
-          dot.addEventListener("click", function() {
+        document.querySelectorAll(".epg-color-dot").forEach((dot) => {
+          dot.addEventListener("click", function () {
             const picker = this.parentElement.querySelector(".epg-color-picker");
             if (picker) {
               picker.click();
             }
           });
         });
+
         // Attach event listener to color pickers for change events.
-        document.querySelectorAll(".epg-color-picker").forEach(picker => {
+        document.querySelectorAll(".epg-color-picker").forEach((picker) => {
           picker.addEventListener("change", updateEpgColor);
         });
       });
+
       function updateStreamStatus() {
         // Pause updating if any EPG operation is in progress.
-        if (epgParsingInProgress || epgUploadingInProgress || epgDeletingInProgress) return;
+        if (epgParsingInProgress || epgUploadingInProgress || epgDeletingInProgress)
+          return;
+
         fetch("/api/stream_status")
           .then((response) => response.json())
           .then((data) => {
@@ -349,18 +406,22 @@
               html += "<th>Resolution</th>";
               html += "<th>Audio Info</th>";
               html += "</tr></thead><tbody>";
+
               for (const channel in data) {
                 const stream = data[channel];
                 const subscribers = stream.subscriber_count;
                 const streamUrl = stream.stream_url;
                 const channelName = stream.channel_name || "N/A";
+
                 let currentProgram = "N/A";
                 if (stream.current_program && stream.current_program.title) {
                   currentProgram = stream.current_program.title;
                 }
+
                 let videoCodec = "N/A";
                 let resolution = "N/A";
                 let audioInfo = "N/A";
+
                 if (stream.probe_info && stream.probe_info.streams) {
                   const streams = stream.probe_info.streams;
                   const videoStream = streams.find((s) => s.codec_type === "video");
@@ -370,9 +431,16 @@
                   }
                   const audioStream = streams.find((s) => s.codec_type === "audio");
                   if (audioStream) {
-                    audioInfo = audioStream.codec_name + " " + audioStream.sample_rate + "Hz " + audioStream.channels + "ch";
+                    audioInfo =
+                      audioStream.codec_name +
+                      " " +
+                      audioStream.sample_rate +
+                      "Hz " +
+                      audioStream.channels +
+                      "ch";
                   }
                 }
+
                 html += `<tr>
                           <td>${channel}</td>
                           <td>${channelName}</td>
@@ -384,6 +452,7 @@
                           <td>${audioInfo}</td>
                         </tr>`;
               }
+
               html += "</tbody></table>";
               container.innerHTML = html;
             }
@@ -393,21 +462,24 @@
               "<p>Error fetching stream status: " + error + "</p>";
           });
       }
+
       function parseEPG() {
         const parseButton = document.getElementById("parse-epg-button");
         parseButton.disabled = true;
         epgParsingInProgress = true;
+
         const statusEl = document.getElementById("parse-epg-status");
         statusEl.innerText = "Parsing EPG files... please wait.";
         statusEl.style.display = "block";
+
         fetch("/parse_epg", { method: "POST" })
-          .then(response => {
+          .then((response) => {
             if (!response.ok) {
               throw new Error("Failed to parse EPG files.");
             }
             return response.json();
           })
-          .then(data => {
+          .then((data) => {
             if (data.success) {
               statusEl.innerText = data.message;
             } else {
@@ -419,31 +491,34 @@
               location.reload();
             }, 3000);
           })
-          .catch(error => {
+          .catch((error) => {
             statusEl.innerText = "Error parsing EPG files: " + error.message;
             epgParsingInProgress = false;
             parseButton.disabled = false;
           });
       }
+
       function uploadEPG(event) {
         event.preventDefault();
         epgUploadingInProgress = true;
+
         const form = document.getElementById("upload-epg-form");
         const formData = new FormData(form);
         const statusEl = document.getElementById("upload-epg-status");
         statusEl.innerText = "Uploading EPG file... please wait.";
         statusEl.style.display = "block";
+
         fetch("/upload_epg", {
           method: "POST",
-          body: formData
+          body: formData,
         })
-          .then(response => {
+          .then((response) => {
             if (!response.ok) {
               throw new Error("Upload failed");
             }
             return response.json();
           })
-          .then(data => {
+          .then((data) => {
             if (data.success) {
               statusEl.innerText = data.message;
             } else {
@@ -455,7 +530,7 @@
               location.reload();
             }, 3000);
           })
-          .catch(error => {
+          .catch((error) => {
             statusEl.innerText = "Error uploading EPG: " + error.message;
             setTimeout(() => {
               statusEl.style.display = "none";
@@ -463,25 +538,28 @@
             }, 5000);
           });
       }
+
       function deleteEPG(event) {
         event.preventDefault();
         epgDeletingInProgress = true;
+
         const form = event.target;
         const formData = new FormData(form);
         const statusEl = document.getElementById("delete-epg-status");
         statusEl.innerText = "Deleting EPG file... please wait.";
         statusEl.style.display = "block";
+
         fetch("/delete_epg", {
           method: "POST",
-          body: formData
+          body: formData,
         })
-          .then(response => {
+          .then((response) => {
             if (!response.ok) {
               throw new Error("Delete failed");
             }
             return response.json();
           })
-          .then(data => {
+          .then((data) => {
             if (data.success) {
               statusEl.innerText = data.message;
             } else {
@@ -493,7 +571,7 @@
               location.reload();
             }, 3000);
           })
-          .catch(error => {
+          .catch((error) => {
             statusEl.innerText = "Error deleting EPG file: " + error.message;
             setTimeout(() => {
               statusEl.style.display = "none";
@@ -501,6 +579,7 @@
             }, 5000);
           });
       }
+
       function updateEpgColor(event) {
         const picker = event.target;
         const filename = picker.getAttribute("data-filename");
@@ -508,10 +587,10 @@
         fetch("/update_epg_color", {
           method: "POST",
           headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: `filename=${encodeURIComponent(filename)}&color=${encodeURIComponent(newColor)}`
+          body: `filename=${encodeURIComponent(filename)}&color=${encodeURIComponent(newColor)}`,
         })
-          .then(response => response.json())
-          .then(data => {
+          .then((response) => response.json())
+          .then((data) => {
             if (data.success) {
               const dot = picker.parentElement.querySelector(".epg-color-dot");
               if (dot) {
@@ -521,7 +600,7 @@
               alert("Error updating color: " + data.message);
             }
           })
-          .catch(error => {
+          .catch((error) => {
             alert("Error updating color: " + error.message);
           });
       }
