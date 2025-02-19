@@ -12,7 +12,7 @@ from .config import DB_FILE, MODIFIED_EPG_DIR, EPG_DIR, HOST_IP, PORT, CUSTOM_LO
 from .database import init_db, swap_channel_numbers
 from .epg import (
     update_modified_epg, update_channel_logo_in_epg, update_channel_metadata_in_epg,
-    update_program_data_for_channel, parse_raw_epg_files, build_combined_epg
+    update_program_data_for_channel, parse_raw_epg_files, build_combined_epg, load_epg_color_mapping
 )
 from .streaming import get_shared_stream, clear_shared_stream
 from fastapi.templating import Jinja2Templates
@@ -288,45 +288,66 @@ def update_channel_category(channel_id: int = Form(...), new_category: str = For
 
 @router.get("/api/epg_entries")
 def get_epg_entries(search: str = Query("", min_length=0), raw_file: str = Query("", min_length=0)):
+    """
+    Returns an array of objects, each having:
+      {
+        "display_name": "...",
+        "raw_epg_file": "...",
+        "color": "#FFFFFF"
+      }
+    If 'search' is provided, we filter by display_name.
+    If 'raw_file' is provided, we also filter by raw_epg_file.
+    """
+
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
+
+    # Build a dynamic WHERE clause to handle search and raw_file.
+    where_clauses = []
+    params = []
+
     if search:
-        if raw_file:
-            c.execute("""
-                SELECT DISTINCT rec.display_name
-                FROM raw_epg_channels rec
-                JOIN raw_epg_programs rep ON rep.raw_channel_id = rec.raw_id
-                WHERE LOWER(rec.display_name) LIKE LOWER(?)
-                  AND rep.raw_epg_file = ?
-                ORDER BY rec.display_name
-            """, (f"%{search.lower()}%", raw_file))
-        else:
-            c.execute("""
-                SELECT DISTINCT display_name
-                FROM raw_epg_channels
-                WHERE LOWER(display_name) LIKE LOWER(?)
-                ORDER BY display_name
-            """, (f"%{search.lower()}%",))
-    else:
-        if raw_file:
-            c.execute("""
-                SELECT DISTINCT rec.display_name
-                FROM raw_epg_channels rec
-                JOIN raw_epg_programs rep ON rep.raw_channel_id = rec.raw_id
-                WHERE rep.raw_epg_file = ?
-                ORDER BY rec.display_name
-            """, (raw_file,))
-        else:
-            c.execute("""
-                SELECT DISTINCT display_name
-                FROM raw_epg_channels
-                ORDER BY display_name
-            """)
+        where_clauses.append("LOWER(rec.display_name) LIKE LOWER(?)")
+        params.append(f"%{search.lower()}%")
+
+    if raw_file:
+        where_clauses.append("rep.raw_epg_file = ?")
+        params.append(raw_file)
+
+    # Base query with join so we can retrieve raw_epg_file
+    query = """
+        SELECT DISTINCT rec.display_name, rep.raw_epg_file
+        FROM raw_epg_channels rec
+        JOIN raw_epg_programs rep ON rep.raw_channel_id = rec.raw_id
+    """
+
+    # If we have any filters, append WHERE
+    if where_clauses:
+        query += " WHERE " + " AND ".join(where_clauses)
+
+    query += " ORDER BY rec.display_name"
+
+    c.execute(query, params)
     rows = c.fetchall()
     conn.close()
-    results = [row[0] for row in rows if row[0]]
-    return JSONResponse(results)
 
+    # Load your EPG color mapping, e.g. { "EPG1.xml": "#ffcc00", ... }
+    color_map = load_epg_color_mapping()
+
+    # Build an array of objects
+    results = []
+    for (display_name, raw_epg_file) in rows:
+        if not display_name:
+            continue
+        raw_epg_file = raw_epg_file or ""
+        color = color_map.get(raw_epg_file, "#ffffff")
+        results.append({
+            "display_name": display_name,
+            "raw_epg_file": raw_epg_file,
+            "color": color
+        })
+
+    return JSONResponse(results)
 
 @router.post("/update_epg_entry")
 def update_epg_entry(channel_id: int = Form(...), new_epg_entry: str = Form(...)):

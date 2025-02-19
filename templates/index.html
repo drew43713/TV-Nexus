@@ -238,7 +238,7 @@
         color: #fff;
       }
       
-      /* Logo Picker grid layout (unchanged as per your original code) */
+      /* Logo Picker grid layout */
       #logo-picker-container {
         display: grid;
         grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
@@ -255,6 +255,35 @@
         object-fit: contain;
         border-radius: 4px;
         cursor: pointer;
+      }
+      
+      /* EPG Suggestion Box (for color-coded entries) */
+      #epg-suggestions {
+        display: none;
+        position: absolute;
+        background: #3a3a4a;
+        border: 1px solid #444;
+        border-radius: 4px;
+        max-height: 200px;
+        overflow-y: auto;
+        width: 90%;
+        left: 5%;
+        z-index: 1100;
+      }
+      .epg-suggestion-item {
+        padding: 6px 10px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+      }
+      .epg-color-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        margin-right: 8px;
+      }
+      .epg-suggestion-item:hover {
+        background: #2a2a3a;
       }
       
       /* New dropdown styling for raw file filter */
@@ -320,10 +349,8 @@
       </thead>
       <tbody>
         {% for channel in channels %}
-        <!-- 
-          channel[0] = id, channel[1] = channel_number, channel[2] = name, 
-          channel[5] = logo_url, channel[6] = group_title, channel[7] = active
-          Note: EPG mappings are now based on channel_number.
+        <!-- channel[0] = id, channel[1] = channel_number, channel[2] = name, 
+             channel[5] = logo_url, channel[6] = group_title, channel[7] = active
         -->
         <tr data-channel="{{ channel[0] }}"
             data-channel-number="{{ channel[1] }}"
@@ -397,11 +424,11 @@
         </p>
         <p>
           <label for="epg-input"><strong>Select EPG Entry:</strong></label>
-          <input type="text" id="epg-input" placeholder="Type to search..." list="epg-list" />
-          <datalist id="epg-list"></datalist>
+          <input type="text" id="epg-input" placeholder="Type to search..." />
+          <!-- Our custom color-coded suggestion box below -->
+          <div id="epg-suggestions"></div>
         </p>
         <button class="probe-button" onclick="probeStream()">Probe Stream</button>
-        <!-- Probe results appear in a scrollable box -->
         <div id="probe-results"></div>
         <button class="save-all-button" onclick="saveAllChanges()">Save Changes</button>
         <button onclick="closeModal()">Close</button>
@@ -451,6 +478,9 @@
         document.getElementById("logo-search").addEventListener("input", function(e) {
           displayLogos(e.target.value);
         });
+
+        loadRawFileOptions();
+        initEPGSearchWithColors();
       });
       
       // Update active status and refresh the EPG data if activated.
@@ -687,47 +717,74 @@
           .catch(error => console.error("Error fetching raw file list:", error));
       }
       
-      // Update the EPG typeahead to include the raw file filter.
-      function initEPGTypeAhead() {
+      /**
+       * initEPGSearchWithColors:
+       * Sets up a custom suggestion box (#epg-suggestions) that shows
+       * each EPG entry along with its color dot (based on raw_epg_file).
+       *
+       * We fetch from /api/epg_entries, which now returns an array of objects:
+       * [
+       *   {
+       *     "display_name": "CNN HD",
+       *     "raw_epg_file": "EPG1.xml",
+       *     "color": "#ffcc00"
+       *   },
+       *   ...
+       * ]
+       */
+      function initEPGSearchWithColors() {
         const epgInput = document.getElementById("epg-input");
-        const dataList = document.getElementById("epg-list");
-        if (!epgInput || !dataList) return;
+        const suggestionsBox = document.getElementById("epg-suggestions");
+        const rawFileSelect = document.getElementById("raw-file-filter");
+        
+        if (!epgInput || !suggestionsBox) return;
+        
         epgInput.addEventListener("input", function () {
-          dataList.innerHTML = "";
           const searchTerm = epgInput.value.trim();
           if (searchTerm.length < 2) {
+            suggestionsBox.style.display = "none";
             return;
           }
-          const rawFile = document.getElementById("raw-file-filter").value;
+          const rawFile = rawFileSelect.value;
           const url = `/api/epg_entries?search=${encodeURIComponent(searchTerm)}&raw_file=${encodeURIComponent(rawFile)}`;
           fetch(url)
             .then(response => response.json())
             .then(entries => {
-              dataList.innerHTML = "";
-              entries.forEach(name => {
-                const option = document.createElement("option");
-                option.value = name;
-                dataList.appendChild(option);
+              suggestionsBox.innerHTML = "";
+              if (!entries || entries.length === 0) {
+                suggestionsBox.style.display = "none";
+                return;
+              }
+              // entries = [ {display_name, raw_epg_file, color}, ... ]
+              entries.forEach(item => {
+                const div = document.createElement("div");
+                div.className = "epg-suggestion-item";
+                div.innerHTML = `
+                  <div class="epg-color-dot" style="background: ${item.color || '#fff'};"></div>
+                  <span>${item.display_name}</span>
+                `;
+                div.addEventListener("click", () => {
+                  epgInput.value = item.display_name;
+                  suggestionsBox.style.display = "none";
+                });
+                suggestionsBox.appendChild(div);
               });
+              suggestionsBox.style.display = "block";
             })
-            .catch(err => console.error("Error fetching EPG entries:", err));
+            .catch(err => console.error("Error fetching EPG entries with colors:", err));
         });
-        epgInput.addEventListener("change", () => {
-          dataList.innerHTML = "";
+        
+        // Hide suggestions if user clicks outside
+        document.addEventListener("click", (event) => {
+          if (!suggestionsBox.contains(event.target) && event.target !== epgInput) {
+            suggestionsBox.style.display = "none";
+          }
         });
-        // Also re-query when the raw file dropdown value changes.
-        document.getElementById("raw-file-filter").addEventListener("change", function () {
-          const event = new Event('input');
-          epgInput.dispatchEvent(event);
+        
+        // Also re-query when the raw file dropdown value changes
+        rawFileSelect.addEventListener("change", function () {
+          epgInput.dispatchEvent(new Event("input"));
         });
-      }
-      
-      // When the modal opens, load raw file options and initialize typeahead.
-      function openModal() {
-        loadRawFileOptions();
-        initEPGTypeAhead();
-        document.getElementById("modal").style.display = "block";
-        document.getElementById("overlay").style.display = "block";
       }
       
       function closeModal() {
@@ -777,6 +834,7 @@
         document.getElementById("modal-stream-url").innerText = streamUrl;
         document.getElementById("modal-stream-url").href = streamUrl;
       
+        // We now use a custom suggestion box, so just set the text input:
         document.getElementById("epg-input").value = epgEntry || "";
         document.getElementById("probe-results").innerText = "";
       
@@ -792,8 +850,12 @@
           toggleStatusBtn.classList.add("inactive");
         }
       
-        // Open the modal and load raw file options.
         openModal();
+      }
+      
+      function openModal() {
+        document.getElementById("modal").style.display = "block";
+        document.getElementById("overlay").style.display = "block";
       }
       
       function editChannelName() {
@@ -1024,7 +1086,5 @@
         }
       }
     </script>
-    
-    {{ js_script|safe }}
   </body>
 </html>
