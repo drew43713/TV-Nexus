@@ -36,7 +36,6 @@ def settings_page(request: Request):
         current_config = {}
     
     tuner_count = current_config.get("TUNER_COUNT", 1)
-    # Pull the REPARSE_EPG_INTERVAL from the config, default to 1440 if not present
     reparse_interval = current_config.get("REPARSE_EPG_INTERVAL", 1440)
     
     updated = request.query_params.get("updated", None)
@@ -50,46 +49,66 @@ def settings_page(request: Request):
         "epg_colors": epg_colors,
         "m3u_file": m3u_file,
         "tuner_count": tuner_count,
-        "reparse_interval": reparse_interval,  # Pass to template
+        "reparse_interval": reparse_interval,
         "updated": updated,
         "epg_upload_success": epg_upload_success,
         "m3u_upload_success": m3u_upload_success,
         "parse_epg_success": parse_epg_success,
+        "config": current_config  # Pass the config here!
     })
 
 @router.post("/update_config")
-async def update_config(tuner_count: int = Form(...), reparse_epg_interval: int = Form(...)):
+async def update_config(
+    HOST_IP: str = Form(...),
+    PORT: int = Form(...),
+    M3U_DIR: str = Form(...),
+    EPG_DIR: str = Form(...),
+    MODIFIED_EPG_DIR: str = Form(...),
+    DB_FILE: str = Form(...),
+    LOGOS_DIR: str = Form(...),
+    CUSTOM_LOGOS_DIR: str = Form(...),
+    TUNER_COUNT: int = Form(...),
+    DOMAIN_NAME: str = Form(...),
+    EPG_COLORS_FILE: str = Form(...),
+    REPARSE_EPG_INTERVAL: int = Form(...)
+):
     """
-    Updates TUNER_COUNT and REPARSE_EPG_INTERVAL in config.json
-    and restarts the EPG re-parse background task so changes take effect immediately.
+    Update all configuration values from the settings page.
     """
-    # 1) Load the current config from disk
     try:
         with open(CONFIG_FILE_PATH, "r") as f:
             current_config = json.load(f)
     except Exception:
-        raise HTTPException(status_code=500, detail="Failed to load configuration.")
+        current_config = {}
     
-    # 2) Update the Python dictionary
-    current_config["TUNER_COUNT"] = tuner_count
-    current_config["REPARSE_EPG_INTERVAL"] = reparse_epg_interval
+    # Update the config dictionary with new values.
+    current_config.update({
+        "HOST_IP": HOST_IP,
+        "PORT": PORT,
+        "M3U_DIR": M3U_DIR,
+        "EPG_DIR": EPG_DIR,
+        "MODIFIED_EPG_DIR": MODIFIED_EPG_DIR,
+        "DB_FILE": DB_FILE,
+        "LOGOS_DIR": LOGOS_DIR,
+        "CUSTOM_LOGOS_DIR": CUSTOM_LOGOS_DIR,
+        "TUNER_COUNT": TUNER_COUNT,
+        "DOMAIN_NAME": DOMAIN_NAME,
+        "EPG_COLORS_FILE": EPG_COLORS_FILE,
+        "REPARSE_EPG_INTERVAL": REPARSE_EPG_INTERVAL
+    })
     
-    # 3) Write updated config back to disk
     try:
         with open(CONFIG_FILE_PATH, "w") as f:
             json.dump(current_config, f, indent=4)
     except Exception:
         raise HTTPException(status_code=500, detail="Failed to save configuration.")
     
-    # 4) Also update our in-memory config
-    config["TUNER_COUNT"] = tuner_count
-    config["REPARSE_EPG_INTERVAL"] = reparse_epg_interval
+    # Update the in-memory configuration.
+    config.update(current_config)
     
-    # 5) Cancel the old re-parse task and start a new one right away
-    #    because we are in an async route, we can safely call 'await'
+    # Restart the background EPG re-parse task.
     await start_epg_reparse_task()
-
-    # Redirect user to show success
+    
     return RedirectResponse(url="/settings?updated=true", status_code=303)
 
 @router.post("/upload_epg")

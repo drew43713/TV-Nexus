@@ -273,32 +273,60 @@
       {% endif %}
     </div>
 
-    <!-- Configuration Section (Tuner Count + Reparse Interval) -->
+    <!-- Configuration Section (All configuration keys) -->
     <div class="section">
-      <h2>Configuration</h2>
+      <h2>Configuration Settings</h2>
       <div class="config-form">
         <form action="/update_config" method="post">
           <div style="margin-bottom: 10px;">
-            <label for="tuner_count">Number of Tuners:</label>
-            <input
-              type="number"
-              id="tuner_count"
-              name="tuner_count"
-              value="{{ tuner_count }}"
-              min="1"
-            />
+            <label for="HOST_IP">Host IP:</label>
+            <input type="text" id="HOST_IP" name="HOST_IP" value="{{ config['HOST_IP'] }}" required />
           </div>
           <div style="margin-bottom: 10px;">
-            <label for="reparse_epg_interval">Reparse EPG Interval (minutes):</label>
-            <input
-              type="number"
-              id="reparse_epg_interval"
-              name="reparse_epg_interval"
-              value="{{ reparse_interval }}"
-              min="0"
-            />
+            <label for="PORT">Port:</label>
+            <input type="number" id="PORT" name="PORT" value="{{ config['PORT'] }}" required />
           </div>
-          <button type="submit">Update</button>
+          <div style="margin-bottom: 10px;">
+            <label for="M3U_DIR">M3U Directory:</label>
+            <input type="text" id="M3U_DIR" name="M3U_DIR" value="{{ config['M3U_DIR'] }}" required />
+          </div>
+          <div style="margin-bottom: 10px;">
+            <label for="EPG_DIR">EPG Directory:</label>
+            <input type="text" id="EPG_DIR" name="EPG_DIR" value="{{ config['EPG_DIR'] }}" required />
+          </div>
+          <div style="margin-bottom: 10px;">
+            <label for="MODIFIED_EPG_DIR">Modified EPG Directory:</label>
+            <input type="text" id="MODIFIED_EPG_DIR" name="MODIFIED_EPG_DIR" value="{{ config['MODIFIED_EPG_DIR'] }}" required />
+          </div>
+          <div style="margin-bottom: 10px;">
+            <label for="DB_FILE">Database File:</label>
+            <input type="text" id="DB_FILE" name="DB_FILE" value="{{ config['DB_FILE'] }}" required />
+          </div>
+          <div style="margin-bottom: 10px;">
+            <label for="LOGOS_DIR">Logos Directory:</label>
+            <input type="text" id="LOGOS_DIR" name="LOGOS_DIR" value="{{ config['LOGOS_DIR'] }}" required />
+          </div>
+          <div style="margin-bottom: 10px;">
+            <label for="CUSTOM_LOGOS_DIR">Custom Logos Directory:</label>
+            <input type="text" id="CUSTOM_LOGOS_DIR" name="CUSTOM_LOGOS_DIR" value="{{ config['CUSTOM_LOGOS_DIR'] }}" required />
+          </div>
+          <div style="margin-bottom: 10px;">
+            <label for="TUNER_COUNT">Tuner Count:</label>
+            <input type="number" id="TUNER_COUNT" name="TUNER_COUNT" value="{{ config['TUNER_COUNT'] }}" required />
+          </div>
+          <div style="margin-bottom: 10px;">
+            <label for="DOMAIN_NAME">Domain Name:</label>
+            <input type="text" id="DOMAIN_NAME" name="DOMAIN_NAME" value="{{ config['DOMAIN_NAME'] }}" />
+          </div>
+          <div style="margin-bottom: 10px;">
+            <label for="EPG_COLORS_FILE">EPG Colors File:</label>
+            <input type="text" id="EPG_COLORS_FILE" name="EPG_COLORS_FILE" value="{{ config['EPG_COLORS_FILE'] }}" required />
+          </div>
+          <div style="margin-bottom: 10px;">
+            <label for="REPARSE_EPG_INTERVAL">Reparse EPG Interval (minutes):</label>
+            <input type="number" id="REPARSE_EPG_INTERVAL" name="REPARSE_EPG_INTERVAL" value="{{ config['REPARSE_EPG_INTERVAL'] }}" required />
+          </div>
+          <button type="submit">Update Configuration</button>
         </form>
       </div>
     </div>
