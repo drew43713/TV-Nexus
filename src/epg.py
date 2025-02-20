@@ -9,6 +9,17 @@ import json
 import random
 from .config import EPG_DIR, MODIFIED_EPG_DIR, DB_FILE, BASE_URL, EPG_COLORS_FILE
 
+import os
+import gzip
+import html
+import sqlite3
+import xml.etree.ElementTree as ET
+from datetime import datetime, timedelta
+import re
+import json
+import random
+from .config import EPG_DIR, MODIFIED_EPG_DIR, DB_FILE, BASE_URL, EPG_COLORS_FILE
+
 # ====================================================
 # 1) Helper to parse/normalize XMLTV date/time
 # ====================================================
@@ -52,42 +63,7 @@ def parse_raw_epg_files():
     c.execute("DELETE FROM raw_epg_channels")
     c.execute("DELETE FROM raw_epg_programs")
 
-    # Create raw_epg_channels table if needed.
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS raw_epg_channels (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            raw_id TEXT,
-            display_name TEXT
-        )
-    ''')
-
-    # Create raw_epg_programs table if needed.
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS raw_epg_programs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            raw_channel_id TEXT,
-            start TEXT,
-            stop TEXT,
-            title TEXT,
-            description TEXT,
-            icon_url TEXT,
-            raw_epg_file TEXT
-        )
-    ''')
-
-    # Ensure columns exist.
-    c.execute("PRAGMA table_info(raw_epg_programs)")
-    columns = [col_info[1] for col_info in c.fetchall()]
-    if "icon_url" not in columns:
-        try:
-            c.execute("ALTER TABLE raw_epg_programs ADD COLUMN icon_url TEXT")
-        except Exception as e:
-            print(f"[WARNING] Could not add icon_url column: {e}")
-    if "raw_epg_file" not in columns:
-        try:
-            c.execute("ALTER TABLE raw_epg_programs ADD COLUMN raw_epg_file TEXT")
-        except Exception as e:
-            print(f"[WARNING] Could not add raw_epg_file column: {e}")
+    # (Table creation is now handled in database.py.)
 
     for epg_file in epg_files:
         print(f"[INFO] Reading raw EPG: {epg_file}")
@@ -103,6 +79,8 @@ def parse_raw_epg_files():
             # Process channel elements.
             for channel_el in root.findall("channel"):
                 raw_id = html.unescape(channel_el.get("id", "").strip())
+                # Create a composite key: raw_id + "::" + (filename)
+                composite_raw_id = f"{raw_id}::{os.path.basename(epg_file)}"
                 display_names = channel_el.findall("display-name")
                 if len(display_names) >= 2:
                     abbreviation = html.unescape(display_names[0].text.strip()) if display_names[0].text else ""
@@ -112,11 +90,17 @@ def parse_raw_epg_files():
                     disp_name = html.unescape(display_names[0].text.strip())
                 else:
                     disp_name = ""
-                c.execute("INSERT INTO raw_epg_channels (raw_id, display_name) VALUES (?, ?)", (raw_id, disp_name))
+                # Use INSERT OR IGNORE to avoid duplicate (composite_raw_id, file) entries.
+                c.execute(
+                    "INSERT OR IGNORE INTO raw_epg_channels (raw_id, display_name, raw_epg_file) VALUES (?, ?, ?)",
+                    (composite_raw_id, disp_name, os.path.basename(epg_file))
+                )
 
             # Process programme elements.
             for prog_el in root.findall("programme"):
                 raw_prog_channel = html.unescape(prog_el.get("channel", "").strip())
+                # Create the composite key for programmes too.
+                composite_prog_channel = f"{raw_prog_channel}::{os.path.basename(epg_file)}"
                 raw_start_time = prog_el.get("start", "").strip()
                 raw_stop_time = prog_el.get("stop", "").strip()
                 start_time = parse_xmltv_datetime(raw_start_time)
@@ -130,14 +114,14 @@ def parse_raw_epg_files():
                 c.execute("""
                     INSERT INTO raw_epg_programs (raw_channel_id, start, stop, title, description, icon_url, raw_epg_file)
                     VALUES (?, ?, ?, ?, ?, ?, ?)
-                """, (raw_prog_channel, start_time, stop_time, title_text, desc_text, icon_src, os.path.basename(epg_file)))
+                """, (composite_prog_channel, start_time, stop_time, title_text, desc_text, icon_src, os.path.basename(epg_file)))
         except Exception as e:
             print(f"[ERROR] Parsing {epg_file} failed: {e}")
 
     conn.commit()
     conn.close()
     print("[INFO] Finished populating raw_epg_* tables.")
-
+    
 # ====================================================
 # 3) Build combined EPG from raw data (full rebuild)
 # ====================================================

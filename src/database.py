@@ -8,7 +8,7 @@ def init_db():
       - Creates/updates the 'channels' table (with channel_number).
       - Creates/updates the 'epg_programs' and 'epg_channels' tables.
       - Creates/updates the 'raw_epg_channels' and 'raw_epg_programs' tables,
-        including the new 'raw_epg_file' column in raw_epg_programs.
+        including the new 'raw_epg_file' column in both raw_epg_channels and raw_epg_programs.
     """
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
@@ -67,14 +67,25 @@ def init_db():
         )
     ''')
 
-    # Create raw_epg_channels table.
+    # Create raw_epg_channels table with raw_epg_file column and a UNIQUE constraint.
     c.execute('''
         CREATE TABLE IF NOT EXISTS raw_epg_channels (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             raw_id TEXT,
-            display_name TEXT
+            display_name TEXT,
+            raw_epg_file TEXT,
+            UNIQUE(raw_id, raw_epg_file)
         )
     ''')
+
+    # Check if raw_epg_file column exists in raw_epg_channels, and add if missing.
+    c.execute("PRAGMA table_info(raw_epg_channels)")
+    columns = [col_info[1] for col_info in c.fetchall()]
+    if "raw_epg_file" not in columns:
+        try:
+            c.execute("ALTER TABLE raw_epg_channels ADD COLUMN raw_epg_file TEXT")
+        except sqlite3.OperationalError as e:
+            print(f"[WARNING] Could not add raw_epg_file column to raw_epg_channels: {e}")
 
     # Create raw_epg_programs table with the new raw_epg_file column.
     c.execute('''
@@ -89,6 +100,20 @@ def init_db():
             raw_epg_file TEXT
         )
     ''')
+
+    # Check if icon_url and raw_epg_file columns exist in raw_epg_programs, and add if missing.
+    c.execute("PRAGMA table_info(raw_epg_programs)")
+    columns = [col_info[1] for col_info in c.fetchall()]
+    if "icon_url" not in columns:
+        try:
+            c.execute("ALTER TABLE raw_epg_programs ADD COLUMN icon_url TEXT")
+        except sqlite3.OperationalError as e:
+            print(f"[WARNING] Could not add icon_url column: {e}")
+    if "raw_epg_file" not in columns:
+        try:
+            c.execute("ALTER TABLE raw_epg_programs ADD COLUMN raw_epg_file TEXT")
+        except sqlite3.OperationalError as e:
+            print(f"[WARNING] Could not add raw_epg_file column: {e}")
 
     conn.commit()
     conn.close()
