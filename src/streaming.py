@@ -64,7 +64,7 @@ def get_shared_stream(channel_id: int, stream_url: str) -> SharedStream:
         "-user_agent", "VLC/3.0.20-git LibVLC/3.0.20-git",
         "-re", "-i", stream_url,
         "-max_muxing_queue_size", "1024",
-        "-c:v", "copy", "-c:a", "aac",
+        "-c:v", "copy", "-c:a", "ac3",
         "-preset", "ultrafast",
         "-f", "mpegts", "pipe:1"
     ]
