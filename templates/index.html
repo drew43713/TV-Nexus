@@ -452,6 +452,19 @@
     
     <!-- JavaScript Functions -->
     <script>
+      // Restore the filter text after page reload, if available.
+      document.addEventListener("DOMContentLoaded", function () {
+        const savedFilterText = localStorage.getItem("filterText");
+        if (savedFilterText !== null) {
+          const searchInput = document.getElementById("search-input");
+          if (searchInput) {
+            searchInput.value = savedFilterText;
+            filterTable();
+          }
+          localStorage.removeItem("filterText");
+        }
+      });
+      
       let currentChannelId = null;
       let selectedLogo = "";
       let allLogos = [];
@@ -690,6 +703,8 @@
           .then(data => {
             if (data.success) {
               alert("Channels renumbered successfully!");
+              // Save current filter text so that it persists after reload
+              localStorage.setItem("filterText", document.getElementById("search-input").value);
               window.location.reload();
             } else {
               alert("Error: " + data.message);
