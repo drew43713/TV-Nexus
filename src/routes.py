@@ -517,6 +517,11 @@ def update_channel_properties(
         return JSONResponse({"success": False, "error": str(e)})
 
 
+import sqlite3
+from fastapi import Form
+from fastapi.responses import JSONResponse
+from .config import DB_FILE
+
 @router.post("/auto_number_channels")
 def auto_number_channels(
     start_number: int = Form(...),
@@ -526,6 +531,7 @@ def auto_number_channels(
         conn = sqlite3.connect(DB_FILE)
         c = conn.cursor()
 
+        # Parse the provided channel IDs into a list of integers.
         filtered_ids = [int(x.strip()) for x in channel_ids.split(",") if x.strip()]
         if not filtered_ids:
             return JSONResponse({"success": False, "message": "No channels provided."})
@@ -533,23 +539,28 @@ def auto_number_channels(
         n = len(filtered_ids)
         target_min = start_number
         target_max = start_number + n - 1
-        TEMP_OFFSET = 1000000
 
         # Step 1: Temporarily assign filtered channels a negative value
+        # to free up the target range.
         for ch_id in filtered_ids:
             temp_value = -abs(ch_id)
             c.execute("UPDATE channels SET channel_number = ? WHERE id = ?", (temp_value, ch_id))
 
-        # Step 2: Bump unfiltered channels if they conflict
+        # Step 2: For each unfiltered channel, if its channel_number falls within
+        # the target range, reassign it the next highest channel number.
         placeholders = ",".join("?" for _ in filtered_ids)
         c.execute(f"SELECT id, channel_number FROM channels WHERE id NOT IN ({placeholders})", filtered_ids)
         unfiltered_channels = c.fetchall()
         for uc_id, uc_num in unfiltered_channels:
             if target_min <= uc_num <= target_max:
-                new_num = uc_num + TEMP_OFFSET
+                c.execute("SELECT MAX(channel_number) FROM channels")
+                current_max = c.fetchone()[0]
+                if current_max is None:
+                    current_max = 0
+                new_num = current_max + 1
                 c.execute("UPDATE channels SET channel_number = ? WHERE id = ?", (new_num, uc_id))
 
-        # Step 3: Assign final sequential numbers
+        # Step 3: Assign the final sequential numbers to the filtered channels.
         for i, ch_id in enumerate(filtered_ids):
             final_number = start_number + i
             c.execute("UPDATE channels SET channel_number = ? WHERE id = ?", (final_number, ch_id))
@@ -557,13 +568,9 @@ def auto_number_channels(
         conn.commit()
         conn.close()
 
-        # If you want a global rebuild after a mass renumber, do it here:
-        # build_combined_epg()
-
         return JSONResponse({"success": True, "message": "Filtered channels renumbered successfully."})
     except Exception as e:
         return JSONResponse({"success": False, "message": str(e)})
-
 
 @router.get("/api/epg_filenames")
 def get_epg_filenames():

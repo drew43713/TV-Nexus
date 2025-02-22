@@ -164,7 +164,7 @@ async def upload_m3u(file: UploadFile = File(...)):
     from .m3u import load_m3u_files
     load_m3u_files()
     
-    return RedirectResponse(url="/settings?m3u_upload_success=true", status_code=303)
+    return {"success": True, "message": "M3U file uploaded successfully."}
 
 @router.post("/parse_epg")
 def parse_epg():

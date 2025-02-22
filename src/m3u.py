@@ -116,7 +116,7 @@ def load_m3u_files():
                 default_logo = cache_logo(remote_logo, channel_identifier=key) if remote_logo else ""
                 tvg_logo_local = old_logo if old_logo and old_logo != default_logo else default_logo
                 if removed_reason:
-                    # Channel was previously removed; update details but do not re-activate.
+                    # Channel was previously removed; update details but do not change active status.
                     c.execute("""
                         UPDATE channels 
                         SET url = ?, logo_url = ?, name = ?, group_title = ?
@@ -125,25 +125,27 @@ def load_m3u_files():
                     print(f"[INFO] Updated channel '{key}' details but left as removed (removed_reason: {removed_reason}).")
                 else:
                     if old_url != url or (old_logo != tvg_logo_local):
+                        # Update channel details without modifying the active status.
                         c.execute("""
                             UPDATE channels 
-                            SET url = ?, logo_url = ?, name = ?, group_title = ?, removed_reason = NULL, active = 1
+                            SET url = ?, logo_url = ?, name = ?, group_title = ?, removed_reason = NULL
                             WHERE id = ?
                         """, (url, tvg_logo_local, name_part, group_title, channel_id))
-                        print(f"[INFO] Updated channel '{key}' with new URL and logo.")
+                        print(f"[INFO] Updated channel '{key}' with new URL and logo (active status unchanged).")
                     else:
-                        # Ensure the channel is active and clear any removal reason.
-                        c.execute("UPDATE channels SET active = 1, removed_reason = NULL WHERE id = ?", (channel_id,))
+                        # No changes necessary; leave active status as is.
+                        print(f"[INFO] Channel '{key}' already up-to-date; active status unchanged.")
             else:
                 tvg_logo_local = cache_logo(remote_logo, channel_identifier=key) if remote_logo else ""
+                # Insert new channel as inactive (active = 0)
                 c.execute("""
                     INSERT INTO channels (name, url, tvg_name, logo_url, group_title, active)
                     VALUES (?, ?, ?, ?, ?, ?)
-                """, (name_part, url, tvg_name, tvg_logo_local, group_title, 1))
+                """, (name_part, url, tvg_name, tvg_logo_local, group_title, 0))
                 new_id = c.lastrowid
                 # Assign channel_number to be equal to the new record's primary key.
                 c.execute("UPDATE channels SET channel_number = ? WHERE id = ?", (new_id, new_id))
-                print(f"[INFO] Inserted new channel '{key}' with logo. (Active, channel_number set to {new_id})")
+                print(f"[INFO] Inserted new channel '{key}' with logo. (Inactive by default, channel_number set to {new_id})")
             idx += 2
         else:
             idx += 1

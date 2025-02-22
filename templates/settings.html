@@ -73,7 +73,8 @@
         margin-bottom: 10px;
       }
       .config-form input[type="number"],
-      .config-form input[type="file"] {
+      .config-form input[type="file"],
+      .config-form input[type="text"] {
         padding: 5px;
         margin-right: 10px;
         border-radius: 4px;
@@ -195,11 +196,13 @@
     <div class="section">
       <h2>M3U File</h2>
       <div class="config-form">
-        <form action="/upload_m3u" method="post" enctype="multipart/form-data">
+        <form id="upload-m3u-form" enctype="multipart/form-data">
           <input type="file" name="file" accept=".m3u" required />
           <button type="submit">Upload M3U File</button>
         </form>
       </div>
+      <!-- Status message for M3U upload -->
+      <div class="confirmation" id="upload-m3u-status" style="display: none;"></div>
       {% if m3u_file %}
       <ul>
         <li>{{ m3u_file }}</li>
@@ -344,6 +347,7 @@
       let epgParsingInProgress = false;
       let epgUploadingInProgress = false;
       let epgDeletingInProgress = false;
+      let m3uUploadingInProgress = false;
 
       // Hide confirmation messages after 5 seconds.
       setTimeout(() => {
@@ -359,6 +363,8 @@
         if (uploadEpgStatus) uploadEpgStatus.style.display = "none";
         const deleteEpgStatus = document.getElementById("delete-epg-status");
         if (deleteEpgStatus) deleteEpgStatus.style.display = "none";
+        const uploadM3UStatus = document.getElementById("upload-m3u-status");
+        if (uploadM3UStatus) uploadM3UStatus.style.display = "none";
       }, 5000);
 
       // Remove query parameters from URL after page load.
@@ -392,6 +398,11 @@
           uploadForm.addEventListener("submit", uploadEPG);
         }
 
+        const uploadM3UForm = document.getElementById("upload-m3u-form");
+        if (uploadM3UForm) {
+          uploadM3UForm.addEventListener("submit", uploadM3U);
+        }
+
         document.querySelectorAll(".delete-epg-form").forEach((form) => {
           form.addEventListener("submit", deleteEPG);
         });
@@ -413,8 +424,8 @@
       });
 
       function updateStreamStatus() {
-        // Pause updating if any EPG operation is in progress.
-        if (epgParsingInProgress || epgUploadingInProgress || epgDeletingInProgress)
+        // Pause updating if any EPG or M3U operation is in progress.
+        if (epgParsingInProgress || epgUploadingInProgress || epgDeletingInProgress || m3uUploadingInProgress)
           return;
 
         fetch("/api/stream_status")
@@ -567,6 +578,47 @@
           });
       }
 
+      function uploadM3U(event) {
+        event.preventDefault();
+        m3uUploadingInProgress = true;
+
+        const form = document.getElementById("upload-m3u-form");
+        const formData = new FormData(form);
+        const statusEl = document.getElementById("upload-m3u-status");
+        statusEl.innerText = "Uploading M3U file... please wait.";
+        statusEl.style.display = "block";
+
+        fetch("/upload_m3u", {
+          method: "POST",
+          body: formData,
+        })
+          .then((response) => {
+            if (!response.ok) {
+              throw new Error("Upload failed");
+            }
+            return response.json();
+          })
+          .then((data) => {
+            if (data.success) {
+              statusEl.innerText = data.message;
+            } else {
+              statusEl.innerText = "Error: " + data.message;
+            }
+            setTimeout(() => {
+              statusEl.style.display = "none";
+              m3uUploadingInProgress = false;
+              location.reload();
+            }, 3000);
+          })
+          .catch((error) => {
+            statusEl.innerText = "Error uploading M3U: " + error.message;
+            setTimeout(() => {
+              statusEl.style.display = "none";
+              m3uUploadingInProgress = false;
+            }, 5000);
+          });
+      }
+
       function deleteEPG(event) {
         event.preventDefault();
         epgDeletingInProgress = true;
@@ -615,7 +667,7 @@
         fetch("/update_epg_color", {
           method: "POST",
           headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: `filename=${encodeURIComponent(filename)}&color=${encodeURIComponent(newColor)}`,
+          body: "filename=" + encodeURIComponent(filename) + "&color=" + encodeURIComponent(newColor),
         })
           .then((response) => response.json())
           .then((data) => {
