@@ -5,7 +5,7 @@ from .config import DB_FILE
 def init_db():
     """
     Initialize or upgrade the database schema:
-      - Creates/updates the 'channels' table (with channel_number).
+      - Creates/updates the 'channels' table (with channel_number and removed_reason).
       - Creates/updates the 'epg_programs' and 'epg_channels' tables.
       - Creates/updates the 'raw_epg_channels' and 'raw_epg_programs' tables,
         including the new 'raw_epg_file' column in both raw_epg_channels and raw_epg_programs.
@@ -35,6 +35,13 @@ def init_db():
             c.execute("ALTER TABLE channels ADD COLUMN channel_number INTEGER")
         except sqlite3.OperationalError as e:
             print("Error adding channel_number column:", e)
+
+    # Check if 'removed_reason' column exists.
+    if "removed_reason" not in columns:
+        try:
+            c.execute("ALTER TABLE channels ADD COLUMN removed_reason TEXT")
+        except sqlite3.OperationalError as e:
+            print("Error adding removed_reason column:", e)
 
     # Create a unique index on channel_number (if needed).
     try:

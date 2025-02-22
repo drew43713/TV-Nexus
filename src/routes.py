@@ -35,7 +35,7 @@ def web_interface(request: Request):
     import datetime
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-    c.execute("SELECT id, channel_number, name, url, tvg_name, logo_url, group_title, active FROM channels ORDER BY channel_number")
+    c.execute("SELECT id, channel_number, name, url, tvg_name, logo_url, group_title, active, removed_reason FROM channels ORDER BY channel_number")
     channels = c.fetchall()
 
     epg_map = {}
@@ -45,7 +45,8 @@ def web_interface(request: Request):
     now = datetime.datetime.utcnow().strftime("%Y%m%d%H%M%S") + " +0000"
 
     for channel in channels:
-        ch_id, ch_number, ch_name, ch_url, ch_tvg_name, ch_logo, ch_group, ch_active = channel
+        # Unpack all 9 values
+        ch_id, ch_number, ch_name, ch_url, ch_tvg_name, ch_logo, ch_group, ch_active, removed_reason = channel
         c.execute("""
             SELECT title, start, stop, description 
               FROM epg_programs 
@@ -77,7 +78,6 @@ def web_interface(request: Request):
         "BASE_URL": base_url,
         "js_script": js_script
     })
-
 
 @router.get("/discover.json")
 def discover(request: Request):
@@ -200,11 +200,21 @@ def update_channel_number(current_id: int = Form(...), new_id: int = Form(...)):
 def update_channel_active(channel_id: int = Form(...), active: bool = Form(...)):
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
+    # Check if the channel has been marked as removed.
+    c.execute("SELECT removed_reason FROM channels WHERE id = ?", (channel_id,))
+    row = c.fetchone()
+    if row and row[0]:
+        conn.close()
+        raise HTTPException(
+            status_code=400,
+            detail=f"This channel was removed from the M3U file and cannot be reactivated."
+        )
+    
     c.execute("UPDATE channels SET active = ? WHERE id = ?", (1 if active else 0, channel_id))
     conn.commit()
     conn.close()
 
-    # If activating, partial re-parse so the channel gets EPG:
+    # If activating, update its EPG.
     if active:
         update_program_data_for_channel(channel_id)
     return JSONResponse({"success": True})
@@ -569,3 +579,42 @@ def get_epg_filenames():
     conn.close()
     filenames = [row[0] for row in rows]
     return JSONResponse(filenames)
+
+@router.post("/delete_channel")
+def delete_channel(channel_id: int = Form(...)):
+    """
+    Deletes a channel permanently.
+    - Removes it from the database.
+    - Clears any active streaming session.
+    - Rebuilds the combined EPG (thus removing it from the channel table and lineup.json).
+    """
+    try:
+        # Open connection and get channel details.
+        conn = sqlite3.connect(DB_FILE)
+        c = conn.cursor()
+        c.execute("SELECT id, name, channel_number FROM channels WHERE id = ?", (channel_id,))
+        row = c.fetchone()
+        if not row:
+            conn.close()
+            raise HTTPException(status_code=404, detail="Channel not found.")
+        ch_id, ch_name, ch_number = row
+        
+        # If the channel is active and streaming, clear its shared stream.
+        try:
+            from .streaming import clear_shared_stream
+            clear_shared_stream(ch_number)
+        except Exception as e:
+            print(f"[WARNING] Could not clear stream for channel number {ch_number}: {e}")
+        
+        # Delete the channel from the database.
+        c.execute("DELETE FROM channels WHERE id = ?", (channel_id,))
+        conn.commit()
+        conn.close()
+
+        # Rebuild the EPG to remove the channel from the output.
+        parse_raw_epg_files()
+        build_combined_epg()
+
+        return JSONResponse({"success": True, "message": f"Channel '{ch_name}' has been deleted."})
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

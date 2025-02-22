@@ -75,9 +75,22 @@ def load_m3u_files():
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
 
+    # Ensure that the channels table has a 'removed_reason' column.
+    c.execute("PRAGMA table_info(channels)")
+    columns = [col_info[1] for col_info in c.fetchall()]
+    if "removed_reason" not in columns:
+        try:
+            c.execute("ALTER TABLE channels ADD COLUMN removed_reason TEXT")
+            print("[INFO] Added removed_reason column to channels.")
+        except Exception as e:
+            print("Warning: Could not add removed_reason column:", e)
+
     print(f"[INFO] Loading M3U: {m3u_file}")
     with open(m3u_file, "r", encoding="utf-8") as f:
         lines = f.readlines()
+
+    # Collect keys using the channel name (name_part) from the M3U file.
+    m3u_keys = set()
 
     idx = 0
     while idx < len(lines):
@@ -90,34 +103,59 @@ def load_m3u_files():
             url = lines[idx + 1].strip() if (idx + 1) < len(lines) else ""
 
             remote_logo = tvg_logo if tvg_logo else ""
-            key = tvg_name if tvg_name else name_part
+            # For cleanup purposes, add the channel's name to the set.
+            m3u_keys.add(name_part)
 
-            c.execute("SELECT id, url, logo_url FROM channels WHERE tvg_name = ? OR name = ?", (key, key))
+            # Use tvg_name if available; otherwise, fallback to name_part for lookup.
+            key = tvg_name if tvg_name else name_part
+            # Fetch removed_reason along with other fields.
+            c.execute("SELECT id, url, logo_url, removed_reason FROM channels WHERE tvg_name = ? OR name = ?", (key, key))
             row = c.fetchone()
             if row:
-                channel_id, old_url, old_logo = row
+                channel_id, old_url, old_logo, removed_reason = row
                 default_logo = cache_logo(remote_logo, channel_identifier=key) if remote_logo else ""
                 tvg_logo_local = old_logo if old_logo and old_logo != default_logo else default_logo
-                if old_url != url or (old_logo != tvg_logo_local):
+                if removed_reason:
+                    # Channel was previously removed; update details but do not re-activate.
                     c.execute("""
                         UPDATE channels 
                         SET url = ?, logo_url = ?, name = ?, group_title = ?
                         WHERE id = ?
                     """, (url, tvg_logo_local, name_part, group_title, channel_id))
-                    print(f"[INFO] Updated channel '{key}' with new URL and logo.")
+                    print(f"[INFO] Updated channel '{key}' details but left as removed (removed_reason: {removed_reason}).")
+                else:
+                    if old_url != url or (old_logo != tvg_logo_local):
+                        c.execute("""
+                            UPDATE channels 
+                            SET url = ?, logo_url = ?, name = ?, group_title = ?, removed_reason = NULL, active = 1
+                            WHERE id = ?
+                        """, (url, tvg_logo_local, name_part, group_title, channel_id))
+                        print(f"[INFO] Updated channel '{key}' with new URL and logo.")
+                    else:
+                        # Ensure the channel is active and clear any removal reason.
+                        c.execute("UPDATE channels SET active = 1, removed_reason = NULL WHERE id = ?", (channel_id,))
             else:
                 tvg_logo_local = cache_logo(remote_logo, channel_identifier=key) if remote_logo else ""
                 c.execute("""
                     INSERT INTO channels (name, url, tvg_name, logo_url, group_title, active)
                     VALUES (?, ?, ?, ?, ?, ?)
-                """, (name_part, url, tvg_name, tvg_logo_local, group_title, 0))
+                """, (name_part, url, tvg_name, tvg_logo_local, group_title, 1))
                 new_id = c.lastrowid
-                # Assign the channel_number to be equal to the new primary key by default.
+                # Assign channel_number to be equal to the new record's primary key.
                 c.execute("UPDATE channels SET channel_number = ? WHERE id = ?", (new_id, new_id))
-                print(f"[INFO] Inserted new channel '{key}' with logo. (Default inactive, channel_number set to {new_id})")
+                print(f"[INFO] Inserted new channel '{key}' with logo. (Active, channel_number set to {new_id})")
             idx += 2
         else:
             idx += 1
+
+    # Perform cleanup: mark any channels that are active in the database
+    # but whose 'name' is not present in the current M3U file as inactive.
+    c.execute("SELECT id, name, active FROM channels")
+    for channel in c.fetchall():
+        chan_id, chan_name, active = channel
+        if chan_name not in m3u_keys and active == 1:
+            c.execute("UPDATE channels SET active = 0, removed_reason = 'Removed from M3U' WHERE id = ?", (chan_id,))
+            print(f"[INFO] Marked channel '{chan_name}' as removed (not in current M3U).")
 
     conn.commit()
     conn.close()

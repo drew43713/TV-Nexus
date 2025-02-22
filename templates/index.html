@@ -350,7 +350,8 @@
       <tbody>
         {% for channel in channels %}
         <!-- channel[0] = id, channel[1] = channel_number, channel[2] = name, 
-             channel[5] = logo_url, channel[6] = group_title, channel[7] = active
+             channel[5] = logo_url, channel[6] = group_title, channel[7] = active,
+             channel[8] = removed_reason
         -->
         <tr data-channel="{{ channel[0] }}"
             data-channel-number="{{ channel[1] }}"
@@ -358,8 +359,9 @@
             data-logo="{{ channel[5] }}"
             data-category="{{ channel[6] }}"
             data-active="{{ channel[7] }}"
-            data-epg="{% if channel[7] != 1 %}Channel Inactive{% elif channel[1]|string in epg_map and epg_map[channel[1]|string] %}{{ epg_map[channel[1]|string]['title'] }}{% else %}No Program{% endif %}"
-            data-epg-entry="{{ epg_entry_map[channel[1]|string] if channel[1]|string in epg_entry_map else 'Unknown' }}"
+            data-removed-reason="{{ channel[8] }}"
+            data-epg="{% if channel[7] != 1 %}{% if channel[8] %}Inactive ({{ channel[8] }}){% else %}Channel Inactive{% endif %}{% elif channel[1]|string in epg_map and epg_map[channel[1]|string] %}{{ epg_map[channel[1]|string]['title'] }}{% else %}No Program{% endif %}"
+            data-epg-entry="{{ epg_entry_map[channel[1]|string] if channel[1]|string in epg_map else 'Unknown' }}"
             data-stream-url="{{ stream_map[channel[1]|string] if channel[1]|string in stream_map else 'N/A' }}">
           <td>
             <input type="number" class="channel-number" value="{{ channel[1] }}" data-old-value="{{ channel[1] }}"
@@ -377,11 +379,15 @@
           <td>{{ channel[6] }}</td>
           <td>
             {% if channel[7] != 1 %}
-            Channel Inactive
+              {% if channel[8] %}
+                Inactive ({{ channel[8] }})
+              {% else %}
+                Channel Inactive
+              {% endif %}
             {% elif channel[1]|string in epg_map and epg_map[channel[1]|string] %}
-            {{ epg_map[channel[1]|string]['title'] }}
+              {{ epg_map[channel[1]|string]['title'] }}
             {% else %}
-            No Program
+              No Program
             {% endif %}
           </td>
           <td>
@@ -431,6 +437,8 @@
         <button class="probe-button" onclick="probeStream()">Probe Stream</button>
         <div id="probe-results"></div>
         <button class="save-all-button" onclick="saveAllChanges()">Save Changes</button>
+        <!-- NEW: Delete Channel Button -->
+        <button class="delete-button" onclick="deleteChannel()">Delete Channel</button>
         <button onclick="closeModal()">Close</button>
       </div>
     </div>
@@ -496,31 +504,59 @@
         initEPGSearchWithColors();
       });
       
-      // Update active status and refresh the EPG data if activated.
+      // OPTION A: Enhanced fetch logic to parse JSON error details when response.ok is false
       function updateActiveStatus(checkbox, channelId) {
         const active = checkbox.checked;
         const row = document.querySelector(`tr[data-channel="${channelId}"]`);
         row.setAttribute("data-active", active ? "1" : "0");
+        
         if (active) {
+          // Show "Loading..." in the EPG cell
           row.cells[5].innerText = "Loading...";
-          refreshChannelEpg(channelId);
         } else {
           row.cells[5].innerText = "Channel Inactive";
         }
+
         fetch("/update_channel_active", {
           method: "POST",
           headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: `channel_id=${channelId}&active=${active}`,
+          body: `channel_id=${channelId}&active=${active}`
         })
-          .then(response => response.json())
+          .then(response => {
+            if (!response.ok) {
+              // Attempt to parse the JSON error from FastAPI
+              return response.json().then(errBody => {
+                const msg = errBody.detail || "Unknown error";
+                throw new Error(msg);
+              });
+            }
+            return response.json();
+          })
           .then(data => {
             if (!data.success) {
+              // The server returned 2xx but success=false
               alert("Failed to update active status");
+            } else {
+              // If user activated the channel, we can optionally refresh EPG right away
+              if (active) {
+                refreshChannelEpg(channelId);
+              }
             }
           })
-          .catch(error => alert("Error updating active status: " + error));
+          .catch(error => {
+            // Show the actual error message
+            alert("Error updating active status: " + error.message);
+            // Revert the checkbox and EPG display if needed
+            checkbox.checked = !active;
+            row.setAttribute("data-active", !active ? "1" : "0");
+            if (!active) {
+              row.cells[5].innerText = "Loading...";
+            } else {
+              row.cells[5].innerText = "Channel Inactive";
+            }
+          });
       }
-      
+
       // Poll for updated EPG data until it is available.
       function refreshChannelEpg(channelId) {
         const row = document.querySelector(`tr[data-channel="${channelId}"]`);
@@ -546,7 +582,7 @@
             });
         }, pollInterval);
       }
-      
+
       function bulkUpdateActive(active) {
         const checkboxes = document.querySelectorAll(".active-checkbox");
         let selectedIds = [];
@@ -563,7 +599,7 @@
         fetch("/update_channels_active_bulk", {
           method: "POST",
           headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: `channel_ids=${channelIds}&active=${active}`,
+          body: `channel_ids=${channelIds}&active=${active}`
         })
           .then(response => response.json())
           .then(data => {
@@ -642,7 +678,7 @@
                 formData.append("new_logo", logoUrl);
                 fetch("/update_channel_logo", {
                   method: "POST",
-                  body: formData,
+                  body: formData
                 })
                   .then(response => response.json())
                   .then(data => {
@@ -697,7 +733,7 @@
         formData.append("channel_ids", channelIds);
         fetch("/auto_number_channels", {
           method: "POST",
-          body: formData,
+          body: formData
         })
           .then(response => response.json())
           .then(data => {
@@ -736,16 +772,6 @@
        * initEPGSearchWithColors:
        * Sets up a custom suggestion box (#epg-suggestions) that shows
        * each EPG entry along with its color dot (based on raw_epg_file).
-       *
-       * We fetch from /api/epg_entries, which now returns an array of objects:
-       * [
-       *   {
-       *     "display_name": "CNN HD",
-       *     "raw_epg_file": "EPG1.xml",
-       *     "color": "#ffcc00"
-       *   },
-       *   ...
-       * ]
        */
       function initEPGSearchWithColors() {
         const epgInput = document.getElementById("epg-input");
@@ -971,14 +997,15 @@
         formData.append("new_id", newValue);
         fetch("/update_channel_number", { method: "POST", body: formData })
           .then(response => {
-            if (response.redirected) {
-              window.location.href = response.url;
-            } else {
-              return response.text();
+            if (!response.ok) {
+              return response.json().then(errBody => {
+                throw new Error(errBody.detail || "Unknown error");
+              });
             }
+            return response.text();
           })
           .catch(error => {
-            alert("Error updating channel number: " + error);
+            alert("Error updating channel number: " + error.message);
             input.value = oldValue;
           });
       }
@@ -1005,7 +1032,7 @@
       
         fetch("/update_channel_properties", {
           method: "POST",
-          body: formData,
+          body: formData
         })
           .then(response => response.json())
           .then(data => {
@@ -1022,6 +1049,34 @@
           .catch(error => {
             alert("Error updating channel properties: " + error);
             console.error("Error:", error);
+          });
+      }
+      
+      function deleteChannel() {
+        if (!currentChannelId) {
+          alert("Channel ID not set.");
+          return;
+        }
+        if (!confirm("Are you sure you want to permanently delete this channel? This action cannot be undone.")) {
+          return;
+        }
+        const formData = new FormData();
+        formData.append("channel_id", currentChannelId);
+        fetch("/delete_channel", {
+          method: "POST",
+          body: formData
+        })
+          .then(response => response.json())
+          .then(data => {
+            if (data.success) {
+              alert(data.message);
+              window.location.reload();
+            } else {
+              alert("Failed to delete channel: " + data.error);
+            }
+          })
+          .catch(error => {
+            alert("Error deleting channel: " + error);
           });
       }
       
