@@ -5,685 +5,192 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>TV Nexus - Settings</title>
     <link rel="icon" type="image/x-icon" href="/static/favicon.ico" />
-    <!-- Include Poppins font -->
     <link
       href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap"
       rel="stylesheet"
     />
-    <style>
-      /* Modern UI Improvements */
-      body {
-        font-family: "Poppins", sans-serif;
-        background: #1e1e2f;
-        color: #fff;
-        margin: 0;
-        padding: 20px;
-      }
-      /* Navigation Bar */
-      nav {
-        position: sticky;
-        top: 0;
-        background: linear-gradient(90deg, #ff416c, #ff4b2b);
-        padding: 15px 0;
-        text-align: center;
-        display: flex;
-        justify-content: center;
-        box-shadow: 0px 4px 6px rgba(0, 0, 0, 0.3);
-        margin: 0;
-      }
-      nav a {
-        color: #fff;
-        padding: 12px 24px;
-        text-decoration: none;
-        font-size: 18px;
-        font-weight: 600;
-        line-height: 1;
-        transition: all 0.3s;
-      }
-      nav a:hover,
-      .active-tab {
-        background: rgba(255, 255, 255, 0.2);
-        border-radius: 10px;
-      }
-      /* Headings */
-      h1,
-      h2 {
-        text-align: center;
-      }
-      h1 {
-        color: #ffcc00;
-      }
-      /* Section container styling for settings elements */
-      .section {
-        width: 80%;
-        margin: 20px auto;
-        padding: 15px;
-        border: 1px solid #444;
-        background: #2a2a3a;
-        border-radius: 8px;
-        box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.3);
-      }
-      .section h2 {
-        margin-top: 0;
-        color: #ffcc00;
-      }
-      /* Config form styling */
-      .config-form {
-        text-align: center;
-        margin-bottom: 10px;
-      }
-      .config-form input[type="number"],
-      .config-form input[type="file"],
-      .config-form input[type="text"] {
-        padding: 5px;
-        margin-right: 10px;
-        border-radius: 4px;
-        border: 1px solid #444;
-        background: #2a2a3a;
-        color: #fff;
-      }
-      .config-form button {
-        padding: 10px 15px;
-        background: linear-gradient(90deg, #ff416c, #ff4b2b);
-        border: none;
-        color: #fff;
-        font-size: 14px;
-        border-radius: 6px;
-        cursor: pointer;
-        transition: all 0.3s;
-      }
-      .config-form button:hover {
-        opacity: 0.8;
-      }
-      /* Scrollable EPG List */
-      .scrollable-list {
-        max-height: 120px;
-        overflow-y: auto;
-        padding: 5px;
-        background: #2a2a3a;
-        border-radius: 5px;
-        border: 1px solid #444;
-      }
-      /* Confirmation message styling */
-      .confirmation {
-        background-color: rgba(40, 167, 69, 0.2);
-        border: 1px solid rgba(40, 167, 69, 0.5);
-        color: #28a745;
-        padding: 10px;
-        margin: 10px auto;
-        width: 80%;
-        text-align: center;
-        border-radius: 5px;
-      }
-      /* Stream status styling */
-      #stream-status {
-        background: #2a2a3a;
-        padding: 10px;
-        border: 1px solid #444;
-        border-radius: 8px;
-        overflow-x: auto;
-        box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.3);
-      }
-      #stream-status table {
-        width: 100%;
-        border-collapse: collapse;
-      }
-      #stream-status th,
-      #stream-status td {
-        border: 1px solid #444;
-        padding: 8px;
-        text-align: left;
-      }
-      #stream-status th {
-        background: #3a3a4a;
-        color: #ffcc00;
-      }
-      /* Modal logo constrained */
-      #modal-logo {
-        max-width: 200px;
-        max-height: 200px;
-        object-fit: contain;
-        display: block;
-        margin: 10px auto;
-      }
-      /* Scrollable probe results box */
-      #probe-results {
-        max-height: 200px;
-        overflow-y: auto;
-        background: #333;
-        padding: 10px;
-        border: 1px solid #444;
-        text-align: left;
-        white-space: pre-wrap;
-        margin: 10px auto;
-      }
-    </style>
+    <link rel="stylesheet" href="/static/styles.css" />
     <script>
       const BASE_URL = "{{ BASE_URL }}";
     </script>
   </head>
   <body>
-    <!-- Navigation -->
     <nav>
       <a href="/">TV Nexus - Channels</a>
       <a href="/settings" class="active-tab">TV Nexus - Settings</a>
     </nav>
-    <h1>TV Nexus Settings</h1>
 
-    <!-- Confirmation banners -->
-    {% if updated %}
-    <div class="confirmation" id="confirmation-message">
-      Configuration updated successfully!
-    </div>
-    {% endif %}
-    {% if epg_upload_success %}
-    <div class="confirmation" id="epg-upload-confirmation">
-      EPG file uploaded and parsed successfully!
-    </div>
-    {% endif %}
-    {% if m3u_upload_success %}
-    <div class="confirmation" id="m3u-upload-confirmation">
-      M3U file uploaded successfully!
-    </div>
-    {% endif %}
-    {% if parse_epg_success %}
-    <div class="confirmation" id="parse-epg-confirmation">
-      EPG files parsed successfully!
-    </div>
-    {% endif %}
+    <div class="container">
+      <h1>TV Nexus Settings</h1>
 
-    <!-- M3U Files Section (at the top) -->
-    <div class="section">
-      <h2>M3U File</h2>
-      <div class="config-form">
-        <form id="upload-m3u-form" enctype="multipart/form-data">
-          <input type="file" name="file" accept=".m3u" required />
-          <button type="submit">Upload M3U File</button>
-        </form>
+      {% if updated %}
+      <div class="confirmation" id="confirmation-message">
+        Configuration updated successfully!
       </div>
-      <!-- Status message for M3U upload -->
-      <div class="confirmation" id="upload-m3u-status" style="display: none;"></div>
-      {% if m3u_file %}
-      <ul>
-        <li>{{ m3u_file }}</li>
-      </ul>
-      {% else %}
-      <p>No M3U file loaded.</p>
       {% endif %}
-    </div>
-
-    <!-- EPG Files Section -->
-    <div class="section">
-      <h2>EPG Files</h2>
-      <div class="config-form">
-        <!-- EPG upload form now submits via AJAX -->
-        <form id="upload-epg-form" enctype="multipart/form-data">
-          <input type="file" name="file" accept=".xml,.xmltv,.gz" required />
-          <button type="submit">Upload EPG File</button>
-        </form>
+      {% if epg_upload_success %}
+      <div class="confirmation" id="epg-upload-confirmation">
+        EPG file uploaded and parsed successfully!
       </div>
-      <!-- Status message for EPG upload -->
-      <div class="confirmation" id="upload-epg-status" style="display: none;"></div>
-      <!-- New button to trigger parsing of EPG files using AJAX -->
-      <div class="config-form">
-        <button id="parse-epg-button" onclick="parseEPG()">Parse EPG Files</button>
-      </div>
-      <!-- Status message for EPG parsing -->
-      <div class="confirmation" id="parse-epg-status" style="display: none;"></div>
-      <!-- Global status message for deleting an EPG file -->
-      <div class="confirmation" id="delete-epg-status" style="display: none;"></div>
-      {% if epg_files %}
-      <div class="scrollable-list">
-        <ul>
-          {% for file in epg_files %}
-          <li>
-            <!-- Clickable colored dot that triggers the hidden color chooser -->
-            <span
-              class="epg-color-dot"
-              style="
-                display: inline-block;
-                width: 10px;
-                height: 10px;
-                border-radius: 50%;
-                background: {{ epg_colors[file] }};
-                margin-right: 5px;
-                cursor: pointer;
-              "
-            ></span>
-            {{ file }}
-            <input
-              type="color"
-              class="epg-color-picker"
-              data-filename="{{ file }}"
-              value="{{ epg_colors[file] }}"
-              style="display: none;"
-            />
-            <form
-              action="/delete_epg"
-              method="post"
-              class="delete-epg-form"
-              style="display: inline;"
-            >
-              <input type="hidden" name="filename" value="{{ file }}" />
-              <button type="submit">Delete</button>
-            </form>
-          </li>
-          {% endfor %}
-        </ul>
-      </div>
-      {% else %}
-      <p>No EPG files loaded.</p>
       {% endif %}
-    </div>
+      {% if m3u_upload_success %}
+      <div class="confirmation" id="m3u-upload-confirmation">
+        M3U file uploaded successfully!
+      </div>
+      {% endif %}
+      {% if parse_epg_success %}
+      <div class="confirmation" id="parse-epg-confirmation">
+        EPG files parsed successfully!
+      </div>
+      {% endif %}
 
-    <!-- Configuration Section (All configuration keys) -->
-    <div class="section">
-      <h2>Configuration Settings</h2>
-      <div class="config-form">
-        <form action="/update_config" method="post">
-          <div style="margin-bottom: 10px;">
-            <label for="HOST_IP">Host IP:</label>
-            <input type="text" id="HOST_IP" name="HOST_IP" value="{{ config['HOST_IP'] }}" required />
-          </div>
-          <div style="margin-bottom: 10px;">
-            <label for="PORT">Port:</label>
-            <input type="number" id="PORT" name="PORT" value="{{ config['PORT'] }}" required />
-          </div>
-          <div style="margin-bottom: 10px;">
-            <label for="M3U_DIR">M3U Directory:</label>
-            <input type="text" id="M3U_DIR" name="M3U_DIR" value="{{ config['M3U_DIR'] }}" required />
-          </div>
-          <div style="margin-bottom: 10px;">
-            <label for="EPG_DIR">EPG Directory:</label>
-            <input type="text" id="EPG_DIR" name="EPG_DIR" value="{{ config['EPG_DIR'] }}" required />
-          </div>
-          <div style="margin-bottom: 10px;">
-            <label for="MODIFIED_EPG_DIR">Modified EPG Directory:</label>
-            <input type="text" id="MODIFIED_EPG_DIR" name="MODIFIED_EPG_DIR" value="{{ config['MODIFIED_EPG_DIR'] }}" required />
-          </div>
-          <div style="margin-bottom: 10px;">
-            <label for="DB_FILE">Database File:</label>
-            <input type="text" id="DB_FILE" name="DB_FILE" value="{{ config['DB_FILE'] }}" required />
-          </div>
-          <div style="margin-bottom: 10px;">
-            <label for="LOGOS_DIR">Logos Directory:</label>
-            <input type="text" id="LOGOS_DIR" name="LOGOS_DIR" value="{{ config['LOGOS_DIR'] }}" required />
-          </div>
-          <div style="margin-bottom: 10px;">
-            <label for="CUSTOM_LOGOS_DIR">Custom Logos Directory:</label>
-            <input type="text" id="CUSTOM_LOGOS_DIR" name="CUSTOM_LOGOS_DIR" value="{{ config['CUSTOM_LOGOS_DIR'] }}" required />
-          </div>
-          <div style="margin-bottom: 10px;">
-            <label for="TUNER_COUNT">Tuner Count:</label>
-            <input type="number" id="TUNER_COUNT" name="TUNER_COUNT" value="{{ config['TUNER_COUNT'] }}" required />
-          </div>
-          <div style="margin-bottom: 10px;">
-            <label for="DOMAIN_NAME">Domain Name:</label>
-            <input type="text" id="DOMAIN_NAME" name="DOMAIN_NAME" value="{{ config['DOMAIN_NAME'] }}" />
-          </div>
-          <div style="margin-bottom: 10px;">
-            <label for="EPG_COLORS_FILE">EPG Colors File:</label>
-            <input type="text" id="EPG_COLORS_FILE" name="EPG_COLORS_FILE" value="{{ config['EPG_COLORS_FILE'] }}" required />
-          </div>
-          <div style="margin-bottom: 10px;">
-            <label for="REPARSE_EPG_INTERVAL">Reparse EPG Interval (minutes):</label>
-            <input type="number" id="REPARSE_EPG_INTERVAL" name="REPARSE_EPG_INTERVAL" value="{{ config['REPARSE_EPG_INTERVAL'] }}" required />
-          </div>
-          <button type="submit">Update Configuration</button>
-        </form>
+      <!-- M3U Section -->
+      <div class="section">
+        <h2>M3U File</h2>
+        <div class="config-form">
+          <form id="upload-m3u-form" enctype="multipart/form-data">
+            <input type="file" name="file" accept=".m3u" required />
+            <button type="submit">Upload M3U File</button>
+          </form>
+        </div>
+        <div class="confirmation" id="upload-m3u-status" style="display: none;"></div>
+        {% if m3u_file %}
+        <!-- Display the M3U file inside a box (like the EPG files) -->
+        <div class="scrollable-list">
+          <ul class="no-bullets">
+            <li>{{ m3u_file }}</li>
+          </ul>
+        </div>
+        {% else %}
+        <p>No M3U file loaded.</p>
+        {% endif %}
+      </div>
+
+      <!-- EPG Section -->
+      <div class="section">
+        <h2>EPG Files</h2>
+        <div class="config-form">
+          <form id="upload-epg-form" enctype="multipart/form-data">
+            <input type="file" name="file" accept=".xml,.xmltv,.gz" required />
+            <button type="submit">Upload EPG File</button>
+          </form>
+        </div>
+        <div class="confirmation" id="upload-epg-status" style="display: none;"></div>
+        <div class="config-form">
+          <button id="parse-epg-button" onclick="parseEPG()">Parse EPG Files</button>
+        </div>
+        <div class="confirmation" id="parse-epg-status" style="display: none;"></div>
+        <div class="confirmation" id="delete-epg-status" style="display: none;"></div>
+        {% if epg_files %}
+        <div class="scrollable-list">
+          <ul class="no-bullets">
+            {% for file in epg_files %}
+            <li>
+              <span
+                class="epg-color-dot"
+                style="
+                  display: inline-block;
+                  width: 10px;
+                  height: 10px;
+                  border-radius: 50%;
+                  background: {{ epg_colors[file] }};
+                  margin-right: 5px;
+                  cursor: pointer;
+                "
+              ></span>
+              {{ file }}
+              <input
+                type="color"
+                class="epg-color-picker"
+                data-filename="{{ file }}"
+                value="{{ epg_colors[file] }}"
+                style="display: none;"
+              />
+              <form
+                action="/delete_epg"
+                method="post"
+                class="delete-epg-form"
+                style="display: inline;"
+              >
+                <input type="hidden" name="filename" value="{{ file }}" />
+                <button type="submit">Delete</button>
+              </form>
+            </li>
+            {% endfor %}
+          </ul>
+        </div>
+        {% else %}
+        <p>No EPG files loaded.</p>
+        {% endif %}
+      </div>
+
+      <!-- Configuration Settings Section -->
+      <div class="section">
+        <h2>Configuration Settings</h2>
+        <div class="config-form">
+          <form action="/update_config" method="post">
+            <div style="margin-bottom: 10px;">
+              <label for="HOST_IP">Host IP:</label>
+              <input type="text" id="HOST_IP" name="HOST_IP" value="{{ config['HOST_IP'] }}" required />
+            </div>
+            <div style="margin-bottom: 10px;">
+              <label for="PORT">Port:</label>
+              <input type="number" id="PORT" name="PORT" value="{{ config['PORT'] }}" required />
+            </div>
+            <div style="margin-bottom: 10px;">
+              <label for="M3U_DIR">M3U Directory:</label>
+              <input type="text" id="M3U_DIR" name="M3U_DIR" value="{{ config['M3U_DIR'] }}" required />
+            </div>
+            <div style="margin-bottom: 10px;">
+              <label for="EPG_DIR">EPG Directory:</label>
+              <input type="text" id="EPG_DIR" name="EPG_DIR" value="{{ config['EPG_DIR'] }}" required />
+            </div>
+            <div style="margin-bottom: 10px;">
+              <label for="MODIFIED_EPG_DIR">Modified EPG Directory:</label>
+              <input type="text" id="MODIFIED_EPG_DIR" name="MODIFIED_EPG_DIR" value="{{ config['MODIFIED_EPG_DIR'] }}" required />
+            </div>
+            <div style="margin-bottom: 10px;">
+              <label for="DB_FILE">Database File:</label>
+              <input type="text" id="DB_FILE" name="DB_FILE" value="{{ config['DB_FILE'] }}" required />
+            </div>
+            <div style="margin-bottom: 10px;">
+              <label for="LOGOS_DIR">Logos Directory:</label>
+              <input type="text" id="LOGOS_DIR" name="LOGOS_DIR" value="{{ config['LOGOS_DIR'] }}" required />
+            </div>
+            <div style="margin-bottom: 10px;">
+              <label for="CUSTOM_LOGOS_DIR">Custom Logos Directory:</label>
+              <input type="text" id="CUSTOM_LOGOS_DIR" name="CUSTOM_LOGOS_DIR" value="{{ config['CUSTOM_LOGOS_DIR'] }}" required />
+            </div>
+            <div style="margin-bottom: 10px;">
+              <label for="TUNER_COUNT">Tuner Count:</label>
+              <input type="number" id="TUNER_COUNT" name="TUNER_COUNT" value="{{ config['TUNER_COUNT'] }}" required />
+            </div>
+            <div style="margin-bottom: 10px;">
+              <label for="DOMAIN_NAME">Domain Name:</label>
+              <input type="text" id="DOMAIN_NAME" name="DOMAIN_NAME" value="{{ config['DOMAIN_NAME'] }}" />
+            </div>
+            <div style="margin-bottom: 10px;">
+              <label for="EPG_COLORS_FILE">EPG Colors File:</label>
+              <input type="text" id="EPG_COLORS_FILE" name="EPG_COLORS_FILE" value="{{ config['EPG_COLORS_FILE'] }}" required />
+            </div>
+            <div style="margin-bottom: 10px;">
+              <label for="REPARSE_EPG_INTERVAL">Reparse EPG Interval (minutes):</label>
+              <input type="number" id="REPARSE_EPG_INTERVAL" name="REPARSE_EPG_INTERVAL" value="{{ config['REPARSE_EPG_INTERVAL'] }}" required />
+            </div>
+            <button type="submit">Update Configuration</button>
+          </form>
+        </div>
+      </div>
+
+      <!-- Stream Status Section -->
+      <div class="section">
+        <h2>Stream Status</h2>
+        <div id="stream-status">
+          <div id="stream-status-content">Loading stream status...</div>
+        </div>
       </div>
     </div>
 
-    <!-- Stream Status Section -->
-    <div class="section">
-      <h2>Stream Status</h2>
-      <div id="stream-status">
-        <div id="stream-status-content">Loading stream status...</div>
-      </div>
-    </div>
-
-    <script>
-      // Global flags to pause stream status updates during any EPG operation.
-      let epgParsingInProgress = false;
-      let epgUploadingInProgress = false;
-      let epgDeletingInProgress = false;
-      let m3uUploadingInProgress = false;
-
-      // Hide confirmation messages after 5 seconds.
-      setTimeout(() => {
-        const conf = document.getElementById("confirmation-message");
-        if (conf) conf.style.display = "none";
-        const epgConf = document.getElementById("epg-upload-confirmation");
-        if (epgConf) epgConf.style.display = "none";
-        const m3uConf = document.getElementById("m3u-upload-confirmation");
-        if (m3uConf) m3uConf.style.display = "none";
-        const parseEpgConf = document.getElementById("parse-epg-confirmation");
-        if (parseEpgConf) parseEpgConf.style.display = "none";
-        const uploadEpgStatus = document.getElementById("upload-epg-status");
-        if (uploadEpgStatus) uploadEpgStatus.style.display = "none";
-        const deleteEpgStatus = document.getElementById("delete-epg-status");
-        if (deleteEpgStatus) deleteEpgStatus.style.display = "none";
-        const uploadM3UStatus = document.getElementById("upload-m3u-status");
-        if (uploadM3UStatus) uploadM3UStatus.style.display = "none";
-      }, 5000);
-
-      // Remove query parameters from URL after page load.
-      window.addEventListener("DOMContentLoaded", () => {
-        const urlParams = new URLSearchParams(window.location.search);
-        if (
-          urlParams.has("updated") ||
-          urlParams.has("epg_upload_success") ||
-          urlParams.has("m3u_upload_success") ||
-          urlParams.has("parse_epg_success")
-        ) {
-          window.history.replaceState({}, document.title, "/settings");
-        }
-
-        updateStreamStatus();
-        setInterval(updateStreamStatus, 5000);
-
-        // Auto-refresh page 3 seconds after any non-AJAX form submission.
-        document.querySelectorAll(".config-form form").forEach((form) => {
-          if (!form.id) {
-            form.addEventListener("submit", () => {
-              setTimeout(() => {
-                location.reload();
-              }, 3000);
-            });
-          }
-        });
-
-        const uploadForm = document.getElementById("upload-epg-form");
-        if (uploadForm) {
-          uploadForm.addEventListener("submit", uploadEPG);
-        }
-
-        const uploadM3UForm = document.getElementById("upload-m3u-form");
-        if (uploadM3UForm) {
-          uploadM3UForm.addEventListener("submit", uploadM3U);
-        }
-
-        document.querySelectorAll(".delete-epg-form").forEach((form) => {
-          form.addEventListener("submit", deleteEPG);
-        });
-
-        // Attach event listener to the color dot to trigger its hidden color picker.
-        document.querySelectorAll(".epg-color-dot").forEach((dot) => {
-          dot.addEventListener("click", function () {
-            const picker = this.parentElement.querySelector(".epg-color-picker");
-            if (picker) {
-              picker.click();
-            }
-          });
-        });
-
-        // Attach event listener to color pickers for change events.
-        document.querySelectorAll(".epg-color-picker").forEach((picker) => {
-          picker.addEventListener("change", updateEpgColor);
-        });
-      });
-
-      function updateStreamStatus() {
-        // Pause updating if any EPG or M3U operation is in progress.
-        if (epgParsingInProgress || epgUploadingInProgress || epgDeletingInProgress || m3uUploadingInProgress)
-          return;
-
-        fetch("/api/stream_status")
-          .then((response) => response.json())
-          .then((data) => {
-            const container = document.getElementById("stream-status-content");
-            if (Object.keys(data).length === 0) {
-              container.innerHTML = "<p>No active streams.</p>";
-            } else {
-              let html = "<table><thead><tr>";
-              html += "<th>Channel Number</th>";
-              html += "<th>Channel Name</th>";
-              html += "<th>Current Program</th>";
-              html += "<th>Subscribers</th>";
-              html += "<th>Stream URL</th>";
-              html += "<th>Video Codec</th>";
-              html += "<th>Resolution</th>";
-              html += "<th>Audio Info</th>";
-              html += "</tr></thead><tbody>";
-
-              for (const channel in data) {
-                const stream = data[channel];
-                const subscribers = stream.subscriber_count;
-                const streamUrl = stream.stream_url;
-                const channelName = stream.channel_name || "N/A";
-
-                let currentProgram = "N/A";
-                if (stream.current_program && stream.current_program.title) {
-                  currentProgram = stream.current_program.title;
-                }
-
-                let videoCodec = "N/A";
-                let resolution = "N/A";
-                let audioInfo = "N/A";
-
-                if (stream.probe_info && stream.probe_info.streams) {
-                  const streams = stream.probe_info.streams;
-                  const videoStream = streams.find((s) => s.codec_type === "video");
-                  if (videoStream) {
-                    videoCodec = videoStream.codec_name;
-                    resolution = videoStream.width + "x" + videoStream.height;
-                  }
-                  const audioStream = streams.find((s) => s.codec_type === "audio");
-                  if (audioStream) {
-                    audioInfo =
-                      audioStream.codec_name +
-                      " " +
-                      audioStream.sample_rate +
-                      "Hz " +
-                      audioStream.channels +
-                      "ch";
-                  }
-                }
-
-                html += `<tr>
-                          <td>${channel}</td>
-                          <td>${channelName}</td>
-                          <td>${currentProgram}</td>
-                          <td>${subscribers}</td>
-                          <td><a href="${streamUrl}" target="_blank">${streamUrl}</a></td>
-                          <td>${videoCodec}</td>
-                          <td>${resolution}</td>
-                          <td>${audioInfo}</td>
-                        </tr>`;
-              }
-
-              html += "</tbody></table>";
-              container.innerHTML = html;
-            }
-          })
-          .catch((error) => {
-            document.getElementById("stream-status-content").innerHTML =
-              "<p>Error fetching stream status: " + error + "</p>";
-          });
-      }
-
-      function parseEPG() {
-        const parseButton = document.getElementById("parse-epg-button");
-        parseButton.disabled = true;
-        epgParsingInProgress = true;
-
-        const statusEl = document.getElementById("parse-epg-status");
-        statusEl.innerText = "Parsing EPG files... please wait.";
-        statusEl.style.display = "block";
-
-        fetch("/parse_epg", { method: "POST" })
-          .then((response) => {
-            if (!response.ok) {
-              throw new Error("Failed to parse EPG files.");
-            }
-            return response.json();
-          })
-          .then((data) => {
-            if (data.success) {
-              statusEl.innerText = data.message;
-            } else {
-              statusEl.innerText = "Error: " + data.message;
-            }
-            epgParsingInProgress = false;
-            setTimeout(() => {
-              statusEl.style.display = "none";
-              location.reload();
-            }, 3000);
-          })
-          .catch((error) => {
-            statusEl.innerText = "Error parsing EPG files: " + error.message;
-            epgParsingInProgress = false;
-            parseButton.disabled = false;
-          });
-      }
-
-      function uploadEPG(event) {
-        event.preventDefault();
-        epgUploadingInProgress = true;
-
-        const form = document.getElementById("upload-epg-form");
-        const formData = new FormData(form);
-        const statusEl = document.getElementById("upload-epg-status");
-        statusEl.innerText = "Uploading EPG file... please wait.";
-        statusEl.style.display = "block";
-
-        fetch("/upload_epg", {
-          method: "POST",
-          body: formData,
-        })
-          .then((response) => {
-            if (!response.ok) {
-              throw new Error("Upload failed");
-            }
-            return response.json();
-          })
-          .then((data) => {
-            if (data.success) {
-              statusEl.innerText = data.message;
-            } else {
-              statusEl.innerText = "Error: " + data.message;
-            }
-            setTimeout(() => {
-              statusEl.style.display = "none";
-              epgUploadingInProgress = false;
-              location.reload();
-            }, 3000);
-          })
-          .catch((error) => {
-            statusEl.innerText = "Error uploading EPG: " + error.message;
-            setTimeout(() => {
-              statusEl.style.display = "none";
-              epgUploadingInProgress = false;
-            }, 5000);
-          });
-      }
-
-      function uploadM3U(event) {
-        event.preventDefault();
-        m3uUploadingInProgress = true;
-
-        const form = document.getElementById("upload-m3u-form");
-        const formData = new FormData(form);
-        const statusEl = document.getElementById("upload-m3u-status");
-        statusEl.innerText = "Uploading M3U file... please wait.";
-        statusEl.style.display = "block";
-
-        fetch("/upload_m3u", {
-          method: "POST",
-          body: formData,
-        })
-          .then((response) => {
-            if (!response.ok) {
-              throw new Error("Upload failed");
-            }
-            return response.json();
-          })
-          .then((data) => {
-            if (data.success) {
-              statusEl.innerText = data.message;
-            } else {
-              statusEl.innerText = "Error: " + data.message;
-            }
-            setTimeout(() => {
-              statusEl.style.display = "none";
-              m3uUploadingInProgress = false;
-              location.reload();
-            }, 3000);
-          })
-          .catch((error) => {
-            statusEl.innerText = "Error uploading M3U: " + error.message;
-            setTimeout(() => {
-              statusEl.style.display = "none";
-              m3uUploadingInProgress = false;
-            }, 5000);
-          });
-      }
-
-      function deleteEPG(event) {
-        event.preventDefault();
-        epgDeletingInProgress = true;
-
-        const form = event.target;
-        const formData = new FormData(form);
-        const statusEl = document.getElementById("delete-epg-status");
-        statusEl.innerText = "Deleting EPG file... please wait.";
-        statusEl.style.display = "block";
-
-        fetch("/delete_epg", {
-          method: "POST",
-          body: formData,
-        })
-          .then((response) => {
-            if (!response.ok) {
-              throw new Error("Delete failed");
-            }
-            return response.json();
-          })
-          .then((data) => {
-            if (data.success) {
-              statusEl.innerText = data.message;
-            } else {
-              statusEl.innerText = "Error: " + data.message;
-            }
-            setTimeout(() => {
-              statusEl.style.display = "none";
-              epgDeletingInProgress = false;
-              location.reload();
-            }, 3000);
-          })
-          .catch((error) => {
-            statusEl.innerText = "Error deleting EPG file: " + error.message;
-            setTimeout(() => {
-              statusEl.style.display = "none";
-              epgDeletingInProgress = false;
-            }, 5000);
-          });
-      }
-
-      function updateEpgColor(event) {
-        const picker = event.target;
-        const filename = picker.getAttribute("data-filename");
-        const newColor = picker.value;
-        fetch("/update_epg_color", {
-          method: "POST",
-          headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: "filename=" + encodeURIComponent(filename) + "&color=" + encodeURIComponent(newColor),
-        })
-          .then((response) => response.json())
-          .then((data) => {
-            if (data.success) {
-              const dot = picker.parentElement.querySelector(".epg-color-dot");
-              if (dot) {
-                dot.style.background = newColor;
-              }
-            } else {
-              alert("Error updating color: " + data.message);
-            }
-          })
-          .catch((error) => {
-            alert("Error updating color: " + error.message);
-          });
-      }
-    </script>
+    <script src="/static/settings.js"></script>
   </body>
 </html>

@@ -1,0 +1,425 @@
+/* Modern UI Improvements */
+body {
+    font-family: "Poppins", sans-serif;
+    background: #1e1e2f;
+    color: #fff;
+    margin: 0;
+    padding: 20px;
+  }
+  
+  /* Navigation Bar */
+  nav {
+    position: sticky;
+    top: 0;
+    background: linear-gradient(90deg, #ff416c, #ff4b2b);
+    padding: 15px 0;
+    text-align: center;
+    display: flex;
+    justify-content: center;
+    box-shadow: 0px 4px 6px rgba(0, 0, 0, 0.3);
+  }
+  nav a {
+    color: #fff;
+    padding: 12px 24px;
+    text-decoration: none;
+    font-size: 18px;
+    font-weight: 600;
+    transition: all 0.3s;
+  }
+  nav a:hover,
+  .active-tab {
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 10px;
+  }
+  
+  /* Container to center horizontally, text centered by default */
+  .container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 20px;
+    text-align: center;
+  }
+  
+  /* Each .section block */
+  .section {
+    width: 80%;
+    margin: 20px auto;
+    padding: 15px;
+    border: 1px solid #444;
+    background: #2a2a3a;
+    border-radius: 8px;
+    box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.3);
+  }
+  
+  /* Confirmation message styling */
+  .confirmation {
+    background-color: rgba(40, 167, 69, 0.2);
+    border: 1px solid rgba(40, 167, 69, 0.5);
+    color: #28a745;
+    padding: 10px;
+    margin: 10px auto;
+    width: 80%;
+    text-align: center;
+    border-radius: 5px;
+  }
+  
+  /* M3U file left alignment, no bullet, in a box like scrollable-list */
+  .m3u-file-left {
+    text-align: left;
+    margin: 0 auto;
+    width: 80%;
+    padding: 5px;
+  }
+  .m3u-box {
+    border: 1px solid #444;
+    background: #2a2a3a;
+    border-radius: 8px;
+    box-shadow: 0px 4px 10px rgba(0,0,0,0.3);
+    padding: 10px;
+    margin: 10px auto;
+  }
+  
+  /* Scrollable EPG List - left aligned text, no bullet points */
+  .scrollable-list {
+    max-height: 120px;
+    overflow-y: auto;
+    padding: 5px;
+    background: #2a2a3a;
+    border-radius: 5px;
+    border: 1px solid #444;
+    text-align: left;
+  }
+  .no-bullets {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  
+  /* Config form styling */
+  .config-form {
+    text-align: center;
+    margin-bottom: 10px;
+  }
+  .config-form input[type="number"],
+  .config-form input[type="file"],
+  .config-form input[type="text"] {
+    padding: 5px;
+    margin-right: 10px;
+    border-radius: 4px;
+    border: 1px solid #444;
+    background: #2a2a3a;
+    color: #fff;
+  }
+  .config-form button {
+    padding: 10px 15px;
+    background: linear-gradient(90deg, #ff416c, #ff4b2b);
+    border: none;
+    color: #fff;
+    font-size: 14px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.3s;
+  }
+  .config-form button:hover {
+    opacity: 0.8;
+  }
+  
+  /* Make the delete buttons smaller */
+  .delete-epg-form button {
+    padding: 5px 10px;
+    font-size: 12px;
+  }
+  
+  /* Stream status styling */
+  #stream-status {
+    background: #2a2a3a;
+    padding: 10px;
+    border: 1px solid #444;
+    border-radius: 8px;
+    overflow-x: auto;
+    box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.3);
+  }
+  #stream-status table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  #stream-status th,
+  #stream-status td {
+    border: 1px solid #444;
+    padding: 8px;
+    text-align: left;
+  }
+  #stream-status th {
+    background: #3a3a4a;
+    color: #ffcc00;
+  }
+  
+  /* Search Box for main channel list */
+  #search-input {
+    width: 100%;
+    padding: 12px;
+    margin: 20px 0;
+    border-radius: 8px;
+    border: none;
+    font-size: 16px;
+    background: #2a2a3a;
+    color: #fff;
+  }
+  
+  /* Channel Table */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    background: #2a2a3a;
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.3);
+  }
+  th,
+  td {
+    padding: 15px;
+    text-align: center;
+    border-bottom: 1px solid #444;
+  }
+  th {
+    background: #3a3a4a;
+    color: #ffcc00;
+    font-weight: bold;
+    cursor: pointer;
+  }
+  tr:hover {
+    background: rgba(255, 255, 255, 0.1);
+  }
+  
+  /* Channel Logo (in table) */
+  img.channel-logo {
+    max-height: 40px;
+    width: auto;
+    background: #2a2a3a;
+    padding: 2px;
+    border: 1px solid #444;
+    box-shadow: 0px 0px 5px rgba(0, 0, 0, 0.3);
+    cursor: pointer;
+  }
+  
+  /* Input for Channel Number */
+  input.channel-number {
+    width: 50px;
+    text-align: center;
+    border-radius: 4px;
+    border: 1px solid #444;
+    padding: 5px;
+    background: #2a2a3a;
+    color: #fff;
+  }
+  
+  /* Buttons */
+  button {
+    background: linear-gradient(90deg, #ff416c, #ff4b2b);
+    border: none;
+    padding: 10px 15px;
+    color: #fff;
+    font-size: 14px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.3s;
+  }
+  button:hover {
+    opacity: 0.8;
+  }
+  
+  /* Modal & Overlay */
+  .modal,
+  .logo-picker-modal {
+    display: none;
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: #2a2a3a;
+    padding: 20px;
+    box-shadow: 0px 0px 15px rgba(0, 0, 0, 0.4);
+    border-radius: 8px;
+    text-align: center;
+    z-index: 1000;
+    width: 600px;
+    max-width: 90vw;
+    max-height: 80vh;
+    overflow-y: auto;
+  }
+  
+  .overlay,
+  .logo-picker-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 900;
+    cursor: pointer;
+  }
+  
+  /* Logo Picker scrollable */
+  .logo-picker-modal {
+    max-height: 80vh;
+    overflow-y: auto;
+  }
+  
+  /* Loading Overlay */
+  #loading {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(255, 255, 255, 0.1);
+    text-align: center;
+    font-size: 24px;
+    color: #fff;
+    padding-top: 20%;
+    z-index: 2000;
+  }
+  
+  /* Additional modal styling */
+  .modal-content,
+  .logo-picker-content {
+    text-align: center;
+  }
+  .modal img,
+  .logo-picker-modal img {
+    display: block;
+    margin: 10px auto;
+  }
+  #modal-logo {
+    max-width: 200px;
+    max-height: 200px;
+    object-fit: contain;
+    display: block;
+    margin: 10px auto;
+  }
+  
+  /* EPG Input */
+  #epg-input {
+    width: 90%;
+    padding: 5px;
+    margin: 10px auto;
+    display: block;
+    border-radius: 4px;
+    border: 1px solid #444;
+    background: #1e1e2f;
+    color: #fff;
+  }
+  
+  /* Toggle Button for Active/Inactive Status */
+  .toggle-btn {
+    padding: 5px 10px;
+    border: 1px solid #444;
+    border-radius: 4px;
+    background: #2a2a3a;
+    margin-left: 10px;
+    cursor: pointer;
+  }
+  .toggle-btn.active {
+    background-color: #28a745;
+    color: #fff;
+    border-color: #28a745;
+  }
+  .toggle-btn.inactive {
+    background-color: #dc3545;
+    color: #fff;
+    border-color: #dc3545;
+  }
+  
+  /* Modal Button Overrides */
+  .modal button {
+    padding: 10px 15px;
+    font-size: 14px;
+    margin: 4px;
+  }
+  
+  /* Logo Picker search bar */
+  #logo-search {
+    width: 80%;
+    padding: 12px;
+    margin: 10px 0;
+    border-radius: 8px;
+    border: none;
+    font-size: 16px;
+    background: #2a2a3a;
+    color: #fff;
+  }
+  
+  /* Logo Picker grid layout */
+  #logo-picker-container {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+    gap: 16px;
+    justify-items: center;
+    width: 100%;
+    margin-top: 10px;
+  }
+  #logo-picker-container img {
+    margin: 0;
+    display: block;
+    max-width: 80px;
+    max-height: 80px;
+    object-fit: contain;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  
+  /* EPG Suggestion Box (for color-coded entries) */
+  #epg-suggestions {
+    display: none;
+    position: absolute;
+    background: #3a3a4a;
+    border: 1px solid #444;
+    border-radius: 4px;
+    max-height: 200px;
+    overflow-y: auto;
+    width: 90%;
+    left: 5%;
+    z-index: 1100;
+  }
+  .epg-suggestion-item {
+    padding: 6px 10px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+  }
+  .epg-color-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    margin-right: 8px;
+  }
+  .epg-suggestion-item:hover {
+    background: #2a2a3a;
+  }
+  
+  /* New dropdown styling for raw file filter */
+  select#raw-file-filter {
+    width: 90%;
+    padding: 5px;
+    margin: 10px auto;
+    border-radius: 4px;
+    border: 1px solid #444;
+    background: #1e1e2f;
+    color: #fff;
+  }
+  
+  /* Scrollable probe results box */
+  #probe-results {
+    max-height: 200px;
+    overflow-y: auto;
+    background: #333;
+    padding: 10px;
+    border: 1px solid #444;
+    text-align: left;
+    white-space: pre-wrap;
+    margin: 10px auto;
+  }
+  
