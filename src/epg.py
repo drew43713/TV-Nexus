@@ -7,18 +7,27 @@ from datetime import datetime, timedelta
 import re
 import json
 import random
-from .config import EPG_DIR, MODIFIED_EPG_DIR, DB_FILE, BASE_URL, EPG_COLORS_FILE
+from .config import EPG_DIR, MODIFIED_EPG_DIR, DB_FILE, EPG_COLORS_FILE, CONFIG_FILE_PATH, HOST_IP, PORT
 
-import os
-import gzip
-import html
-import sqlite3
-import xml.etree.ElementTree as ET
-from datetime import datetime, timedelta
-import re
-import json
-import random
-from .config import EPG_DIR, MODIFIED_EPG_DIR, DB_FILE, BASE_URL, EPG_COLORS_FILE
+
+def _load_config_from_disk():
+    try:
+        with open(CONFIG_FILE_PATH, "r") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+def get_base_url():
+    cfg = _load_config_from_disk()
+    scheme = str(cfg.get("URL_SCHEME", "http")).strip().lower()
+    if scheme not in ("http", "https"):
+        scheme = "http"
+    domain = cfg.get("DOMAIN_NAME", "").strip()
+    if domain:
+        return f"{scheme}://{domain}"
+    host = cfg.get("HOST_IP", HOST_IP)
+    port = cfg.get("PORT", PORT)
+    return f"{scheme}://{host}:{port}"
 
 # ====================================================
 # 1) Helper to parse/normalize XMLTV date/time
@@ -129,6 +138,7 @@ def build_combined_epg():
     print("[INFO] Building combined EPG from raw DB...")
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
+    base_url = get_base_url()
     # Remove old programme entries.
     c.execute("DELETE FROM epg_programs")
     combined_root = ET.Element("tv")
@@ -154,7 +164,7 @@ def build_combined_epg():
         channel_el.append(disp_el)
         if db_logo:
             if db_logo.startswith("/"):
-                full_logo_url = f"{BASE_URL}{db_logo}"
+                full_logo_url = f"{base_url}{db_logo}"
             else:
                 full_logo_url = db_logo
             icon_el = ET.Element("icon", src=full_logo_url)
@@ -212,7 +222,7 @@ def build_combined_epg():
                 d_el.text = desc_txt
                 if icon_url:
                     filename = os.path.basename(icon_url)
-                    new_icon_url = f"{BASE_URL}/schedulesdirect_cache/{filename}"
+                    new_icon_url = f"{base_url}/schedulesdirect_cache/{filename}"
                     icon_el = ET.Element("icon", {"src": new_icon_url})
                     prog_el.append(icon_el)
                 combined_root.append(prog_el)
@@ -292,6 +302,7 @@ def update_program_data_for_channel(db_id: int):
     try:
         tree = ET.parse(combined_epg_file)
         root = tree.getroot()
+        base_url = get_base_url()
     except Exception as e:
         print(f"[ERROR] Unable to load {combined_epg_file}: {e}")
         conn.close()
@@ -309,7 +320,7 @@ def update_program_data_for_channel(db_id: int):
         disp_el.text = db_name
         if db_logo:
             if db_logo.startswith("/"):
-                full_logo_url = f"{BASE_URL}{db_logo}"
+                full_logo_url = f"{base_url}{db_logo}"
             else:
                 full_logo_url = db_logo
             ET.SubElement(channel_el, "icon", {"src": full_logo_url})
@@ -342,7 +353,7 @@ def update_program_data_for_channel(db_id: int):
             d_el.text = desc_txt
             if icon_url:
                 filename = os.path.basename(icon_url)
-                new_icon_url = f"{BASE_URL}/schedulesdirect_cache/{filename}"
+                new_icon_url = f"{base_url}/schedulesdirect_cache/{filename}"
                 icon_el = ET.Element("icon", {"src": new_icon_url})
                 prog_el.append(icon_el)
             root.append(prog_el)
@@ -411,11 +422,12 @@ def update_channel_logo_in_epg(channel_id: int, new_logo: str):
     try:
         tree = ET.parse(combined_epg_file)
         root = tree.getroot()
+        base_url = get_base_url()
         updated = False
         for channel_el in root.findall("channel"):
             if channel_el.get("id") == str(channel_number):
                 if new_logo.startswith("/"):
-                    full_logo_url = f"{BASE_URL}{new_logo}"
+                    full_logo_url = f"{base_url}{new_logo}"
                 else:
                     full_logo_url = new_logo
                 icon_el = channel_el.find("icon")
@@ -452,6 +464,7 @@ def update_channel_metadata_in_epg(channel_id: int, new_name: str, new_logo: str
     try:
         tree = ET.parse(combined_epg_file)
         root = tree.getroot()
+        base_url = get_base_url()
         for ch_el in root.findall("channel"):
             if ch_el.get("id") == str(channel_number):
                 disp_el = ch_el.find("display-name")
@@ -462,7 +475,7 @@ def update_channel_metadata_in_epg(channel_id: int, new_name: str, new_logo: str
                     disp_el.text = new_name
                     ch_el.append(disp_el)
                 if new_logo.startswith("/"):
-                    full_logo_url = f"{BASE_URL}{new_logo}"
+                    full_logo_url = f"{base_url}{new_logo}"
                 else:
                     full_logo_url = new_logo
                 icon_el = ch_el.find("icon")

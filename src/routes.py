@@ -8,7 +8,7 @@ from fastapi.responses import (
     HTMLResponse, RedirectResponse
 )
 import os
-from .config import DB_FILE, MODIFIED_EPG_DIR, EPG_DIR, HOST_IP, PORT, CUSTOM_LOGOS_DIR, LOGOS_DIR, TUNER_COUNT, load_config
+from .config import DB_FILE, MODIFIED_EPG_DIR, EPG_DIR, HOST_IP, PORT, CUSTOM_LOGOS_DIR, LOGOS_DIR, TUNER_COUNT, CONFIG_FILE_PATH
 from .database import init_db, swap_channel_numbers
 from .epg import (
     update_modified_epg, update_channel_logo_in_epg, update_channel_metadata_in_epg,
@@ -21,13 +21,27 @@ router = APIRouter()
 templates = Jinja2Templates(directory="templates")
 
 
+def _load_config_from_disk():
+    try:
+        with open(CONFIG_FILE_PATH, "r") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
 def get_base_url():
-    cfg = load_config()
+    cfg = _load_config_from_disk()
+    # Normalize scheme
+    scheme = str(cfg.get("URL_SCHEME", "http")).strip().lower()
+    if scheme not in ("http", "https"):
+        scheme = "http"
     domain = cfg.get("DOMAIN_NAME", "").strip()
     if domain:
-        return f"https://{domain}"
-    else:
-        return f"http://{HOST_IP}:{PORT}"
+        return f"{scheme}://{domain}"
+    # Fallback to host:port from current config
+    host = cfg.get("HOST_IP", HOST_IP)
+    port = cfg.get("PORT", PORT)
+    return f"{scheme}://{host}:{port}"
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -81,7 +95,7 @@ def web_interface(request: Request):
 
 @router.get("/discover.json")
 def discover(request: Request):
-    config = load_config()
+    config = _load_config_from_disk()
     tuner_count = config.get("TUNER_COUNT", 1)
     base_url = get_base_url()
     return JSONResponse({
@@ -625,3 +639,4 @@ def delete_channel(channel_id: int = Form(...)):
         return JSONResponse({"success": True, "message": f"Channel '{ch_name}' has been deleted."})
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+

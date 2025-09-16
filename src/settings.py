@@ -34,6 +34,12 @@ def settings_page(request: Request):
             current_config = json.load(f)
     except Exception:
         current_config = {}
+
+    # Ensure URL_SCHEME exists and is normalized for the template
+    scheme = str(current_config.get("URL_SCHEME", "http")).strip().lower()
+    if scheme not in ("http", "https"):
+        scheme = "http"
+    current_config["URL_SCHEME"] = scheme
     
     tuner_count = current_config.get("TUNER_COUNT", 1)
     reparse_interval = current_config.get("REPARSE_EPG_INTERVAL", 1440)
@@ -69,6 +75,7 @@ async def update_config(
     CUSTOM_LOGOS_DIR: str = Form(...),
     TUNER_COUNT: int = Form(...),
     DOMAIN_NAME: str = Form(...),
+    URL_SCHEME: str = Form(...),
     EPG_COLORS_FILE: str = Form(...),
     REPARSE_EPG_INTERVAL: int = Form(...)
 ):
@@ -80,6 +87,11 @@ async def update_config(
             current_config = json.load(f)
     except Exception:
         current_config = {}
+
+    # Normalize URL_SCHEME from form input
+    scheme = str(URL_SCHEME).strip().lower()
+    if scheme not in ("http", "https"):
+        scheme = "http"
     
     # Update the config dictionary with new values.
     current_config.update({
@@ -93,6 +105,7 @@ async def update_config(
         "CUSTOM_LOGOS_DIR": CUSTOM_LOGOS_DIR,
         "TUNER_COUNT": TUNER_COUNT,
         "DOMAIN_NAME": DOMAIN_NAME,
+        "URL_SCHEME": scheme,
         "EPG_COLORS_FILE": EPG_COLORS_FILE,
         "REPARSE_EPG_INTERVAL": REPARSE_EPG_INTERVAL
     })
@@ -197,3 +210,4 @@ def update_epg_color(filename: str = Form(...), color: str = Form(...)):
     mapping[filename] = color
     save_epg_color_mapping(mapping)
     return {"success": True, "message": "EPG file color updated."}
+

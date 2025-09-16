@@ -170,6 +170,13 @@
               <input type="text" id="DOMAIN_NAME" name="DOMAIN_NAME" value="{{ config['DOMAIN_NAME'] }}" />
             </div>
             <div style="margin-bottom: 10px;">
+              <label for="URL_SCHEME">URL Scheme:</label>
+              <select id="URL_SCHEME" name="URL_SCHEME">
+                <option value="http" {% if config['URL_SCHEME'] == 'http' %}selected{% endif %}>http</option>
+                <option value="https" {% if config['URL_SCHEME'] == 'https' %}selected{% endif %}>https</option>
+              </select>
+            </div>
+            <div style="margin-bottom: 10px;">
               <label for="EPG_COLORS_FILE">EPG Colors File:</label>
               <input type="text" id="EPG_COLORS_FILE" name="EPG_COLORS_FILE" value="{{ config['EPG_COLORS_FILE'] }}" required />
             </div>

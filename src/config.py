@@ -15,6 +15,8 @@ DEFAULT_CONFIG = {
     "LOGOS_DIR": os.path.join("static", "logos"),
     "CUSTOM_LOGOS_DIR": os.path.join("config", "custom_logos"),
     "TUNER_COUNT": 1,
+    # Protocol/scheme for generated URLs (e.g., lineup.json, epg.xml). Allowed: "http" or "https".
+    "URL_SCHEME": "http",
     # New optional variable:
     "DOMAIN_NAME": "",   # e.g. "mydomain.com"
     "EPG_COLORS_FILE": os.path.join("config", "epg", "epg_colors.json"),
@@ -52,6 +54,13 @@ for key in config.keys():
         else:
             config[key] = env_value
 
+# Normalize and validate URL_SCHEME
+scheme = str(config.get("URL_SCHEME", "http")).strip().lower()
+if scheme not in ("http", "https"):
+    print(f"Invalid URL_SCHEME '{scheme}' in config/environment. Falling back to 'http'.")
+    scheme = "http"
+config["URL_SCHEME"] = scheme
+
 # Write the final configuration back to the config file.
 try:
     with open(CONFIG_FILE_PATH, "w") as f:
@@ -76,19 +85,12 @@ TUNER_COUNT = config["TUNER_COUNT"]
 DOMAIN_NAME = config["DOMAIN_NAME"]
 EPG_COLORS_FILE = config["EPG_COLORS_FILE"]
 REPARSE_EPG_INTERVAL = config["REPARSE_EPG_INTERVAL"]  # In minutes
+URL_SCHEME = config["URL_SCHEME"]
 
-def load_config():
-    try:
-        with open(CONFIG_FILE_PATH, "r") as f:
-            return json.load(f)
-    except Exception as e:
-        print("Error loading config:", e)
-        return DEFAULT_CONFIG.copy()
-
-# Build the BASE_URL once:
-# If DOMAIN_NAME is set (non-empty), use https://DOMAIN_NAME
-# Otherwise use http://HOST_IP:PORT
+# Build the BASE_URL once using the selected URL_SCHEME:
+# If DOMAIN_NAME is set (non-empty), use {URL_SCHEME}://{DOMAIN_NAME}
+# Otherwise use {URL_SCHEME}://{HOST_IP}:{PORT}
 if DOMAIN_NAME:
-    BASE_URL = f"https://{DOMAIN_NAME}"
+    BASE_URL = f"{URL_SCHEME}://{DOMAIN_NAME}"
 else:
-    BASE_URL = f"http://{HOST_IP}:{PORT}"
+    BASE_URL = f"{URL_SCHEME}://{HOST_IP}:{PORT}"
