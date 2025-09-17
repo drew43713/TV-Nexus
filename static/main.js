@@ -1,5 +1,89 @@
 const BASE_URL = "{{ BASE_URL }}";
 
+let statusOverlayEl = null;
+let statusOverlayTextEl = null;
+
+function ensureStatusOverlay() {
+  if (statusOverlayEl) return;
+  statusOverlayEl = document.createElement('div');
+  statusOverlayEl.id = 'status-overlay';
+  statusOverlayEl.style.position = 'fixed';
+  statusOverlayEl.style.inset = '0';
+  statusOverlayEl.style.background = 'rgba(0,0,0,0.6)';
+  statusOverlayEl.style.display = 'none';
+  statusOverlayEl.style.alignItems = 'center';
+  statusOverlayEl.style.justifyContent = 'center';
+  statusOverlayEl.style.zIndex = '9999';
+  statusOverlayEl.style.backdropFilter = 'blur(2px)';
+
+  const box = document.createElement('div');
+  box.style.background = '#fff';
+  box.style.color = '#111';
+  box.style.padding = '20px 24px';
+  box.style.borderRadius = '10px';
+  box.style.boxShadow = '0 8px 24px rgba(0,0,0,0.3)';
+  box.style.minWidth = '280px';
+  box.style.maxWidth = '90%';
+  box.style.fontFamily = 'system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif';
+  box.style.textAlign = 'center';
+
+  const title = document.createElement('div');
+  title.textContent = 'Working…';
+  title.style.fontSize = '18px';
+  title.style.fontWeight = '600';
+  title.style.marginBottom = '8px';
+
+  statusOverlayTextEl = document.createElement('div');
+  statusOverlayTextEl.textContent = '';
+  statusOverlayTextEl.style.fontSize = '14px';
+  statusOverlayTextEl.style.whiteSpace = 'pre-line';
+
+  box.appendChild(title);
+  box.appendChild(statusOverlayTextEl);
+  statusOverlayEl.appendChild(box);
+  document.body.appendChild(statusOverlayEl);
+}
+
+function showStatusOverlay(message) {
+  ensureStatusOverlay();
+  statusOverlayTextEl.textContent = message || '';
+  statusOverlayEl.style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+}
+
+function updateStatusOverlay(message) {
+  if (!statusOverlayEl) return;
+  statusOverlayTextEl.textContent = message || '';
+}
+
+function hideStatusOverlay() {
+  if (!statusOverlayEl) return;
+  statusOverlayEl.style.display = 'none';
+  document.body.style.overflow = '';
+}
+
+let _statusOverlayTicker = null;
+let _statusOverlayBaseMsg = '';
+
+function startStatusOverlayTicker(baseMessage) {
+  _statusOverlayBaseMsg = baseMessage || '';
+  let step = 0;
+  stopStatusOverlayTicker();
+  updateStatusOverlay(_statusOverlayBaseMsg);
+  _statusOverlayTicker = setInterval(() => {
+    step = (step + 1) % 4; // 0..3
+    const dots = '.'.repeat(step);
+    updateStatusOverlay(_statusOverlayBaseMsg + dots);
+  }, 400);
+}
+
+function stopStatusOverlayTicker() {
+  if (_statusOverlayTicker) {
+    clearInterval(_statusOverlayTicker);
+    _statusOverlayTicker = null;
+  }
+}
+
 // Restore the filter text after page reload, if available.
 document.addEventListener("DOMContentLoaded", function () {
   const savedFilterText = localStorage.getItem("filterText");
@@ -731,6 +815,20 @@ function probeStream() {
 document.addEventListener("DOMContentLoaded", function () {
   const table = document.getElementById("channels-table");
   if (!table) return;
+
+  // Add "Insert Channel…" button near the search bar
+  const searchInput = document.getElementById('search-input');
+  if (searchInput && !document.getElementById('insert-channel-btn')) {
+    const btn = document.createElement('button');
+    btn.id = 'insert-channel-btn';
+    btn.type = 'button';
+    btn.textContent = 'Insert Channel…';
+    btn.style.marginLeft = '8px';
+    btn.addEventListener('click', insertChannelAtPrompt);
+    // Place the button right after the search input
+    searchInput.insertAdjacentElement('afterend', btn);
+  }
+
   const headers = table.querySelectorAll("thead th");
   headers.forEach((header, index) => {
     header.addEventListener("click", () => {
@@ -817,6 +915,225 @@ function filterTable() {
       }
     }
     tr[i].style.display = rowContainsQuery ? "" : "none";
+  }
+}
+
+function apiUpdateChannelNumber(currentId, newId) {
+  const formData = new FormData();
+  formData.append('current_id', String(currentId));
+  formData.append('new_id', String(newId));
+  // Include swap=false if backend supports it; ignored otherwise
+  formData.append('swap', 'false');
+  return fetch('/update_channel_number', { method: 'POST', body: formData })
+    .then(response => {
+      if (!response.ok) {
+        return response.json().then(errBody => {
+          throw new Error(errBody.detail || 'Unknown error');
+        });
+      }
+      return true;
+    });
+}
+
+// New function as per instructions:
+function apiInsertChannelAt(insertAt) {
+  const formData = new FormData();
+  formData.append('insert_at', String(insertAt));
+  // Hint to backend about non-swapping behavior if supported
+  formData.append('swap', 'false');
+  return fetch('/insert_channel_at', { method: 'POST', body: formData })
+    .then(async (response) => {
+      if (!response.ok) {
+        // try to parse JSON error if present
+        let msg = 'Request failed';
+        try {
+          const data = await response.json();
+          msg = data && (data.detail || data.error || msg);
+        } catch (_) {}
+        const err = new Error(msg);
+        err.status = response.status;
+        throw err;
+      }
+      return response.json();
+    });
+}
+
+async function performInsertAtServer(insertAt) {
+  const table = document.getElementById('channels-table');
+  let total = 0;
+  if (table) {
+    const rows = Array.from(table.querySelectorAll('tbody tr'));
+    for (const row of rows) {
+      const numStr = row.getAttribute('data-channel-number');
+      if (!numStr) continue;
+      const num = parseInt(numStr, 10);
+      if (!Number.isFinite(num)) continue;
+      if (num >= insertAt) total++;
+    }
+  }
+
+  const baseMsg = (total > 0)
+    ? ('Shifting ' + total + ' channel' + (total === 1 ? '' : 's') + ' at and above ' + insertAt)
+    : ('Shifting channels at and above ' + insertAt);
+  showStatusOverlay(baseMsg);
+  startStatusOverlayTicker(baseMsg + ' ');
+
+  try {
+    const result = await apiInsertChannelAt(insertAt);
+    if (result && result.success === false) {
+      throw new Error(result.error || 'Insert failed');
+    }
+    stopStatusOverlayTicker();
+    updateStatusOverlay('Refreshing table…');
+    await new Promise(r => setTimeout(r, 50));
+    refreshTableBodyPreservingState();
+  } catch (err) {
+    stopStatusOverlayTicker();
+    alert('Insert failed: ' + (err && err.message ? err.message : err));
+  } finally {
+    stopStatusOverlayTicker();
+    hideStatusOverlay();
+  }
+}
+
+async function performInsertAt(insertAt) {
+  const table = document.getElementById('channels-table');
+  if (!table) {
+    alert('Channels table not found.');
+    return;
+  }
+  const rows = Array.from(table.querySelectorAll('tbody tr'));
+  // Collect all numeric channel numbers >= insertAt
+  const targets = [];
+  for (const row of rows) {
+    const numStr = row.getAttribute('data-channel-number');
+    if (!numStr) continue;
+    const num = parseInt(numStr, 10);
+    if (!Number.isFinite(num)) continue;
+    if (num >= insertAt) targets.push(num);
+  }
+  if (targets.length === 0) {
+    alert('No channels at or above that number to shift.');
+    return;
+  }
+  // Sort descending to avoid collisions when incrementing
+  targets.sort((a, b) => b - a);
+
+  const total = targets.length;
+  showStatusOverlay('Shifting ' + total + ' channel' + (total === 1 ? '' : 's') + ' at and above ' + insertAt);
+  // No spinner here because we show fine-grained per-item progress below.
+
+  try {
+    let processed = 0;
+    for (const current of targets) {
+      processed++;
+      updateStatusOverlay(`Shifting channel ${current} ➜ ${current + 1} (${processed}/${total})…`);
+      await apiUpdateChannelNumber(current, current + 1);
+    }
+    updateStatusOverlay('Refreshing table…');
+    // Refresh only the table body; keep scroll position
+    await new Promise(resolve => setTimeout(resolve, 50));
+    refreshTableBodyPreservingState();
+  } catch (err) {
+    console.error('Insert operation failed:', err);
+    alert('Insert failed: ' + (err && err.message ? err.message : err));
+  } finally {
+    hideStatusOverlay();
+  }
+}
+
+// New streaming function inserted after performInsertAtServer:
+function performInsertAtStream(insertAt) {
+  // If EventSource isn't supported, fallback immediately
+  if (typeof EventSource === 'undefined') {
+    console.warn('EventSource not supported; falling back to non-streaming insert.');
+    return performInsertAtServer(insertAt);
+  }
+
+  const url = `/insert_channel_at_stream?insert_at=${encodeURIComponent(insertAt)}`;
+  const es = new EventSource(url);
+
+  let lastLine = '';
+  let tickerActive = false;
+  const show = (msg) => { updateStatusOverlay(msg); };
+  const restartTickerWith = (msg) => {
+    stopStatusOverlayTicker();
+    startStatusOverlayTicker((msg || '').trim() + ' ');
+    tickerActive = true;
+  };
+
+  showStatusOverlay(`Preparing to shift at and above ${insertAt}…`);
+  restartTickerWith(`Preparing to shift at and above ${insertAt}…`);
+
+  es.onmessage = (ev) => {
+    if (!ev || typeof ev.data !== 'string' || !ev.data.length) return;
+    // Only keep the most recent line on screen
+    lastLine = ev.data;
+    show(lastLine);
+    // Keep the UI feeling live by animating dots after the latest line
+    restartTickerWith(lastLine);
+  };
+
+  es.addEventListener('done', (ev) => {
+    stopStatusOverlayTicker();
+    try {
+      if (ev && ev.data) {
+        // Optionally parse payload
+        JSON.parse(ev.data);
+      }
+    } catch (_) {}
+    es.close();
+    // Refresh table after completion
+    refreshTableBodyPreservingState();
+    hideStatusOverlay();
+  });
+
+  es.addEventListener('error', (ev) => {
+    stopStatusOverlayTicker();
+    const msg = ev && ev.data ? ev.data : 'Insert stream error';
+    console.error('Insert stream error:', msg);
+    es.close();
+    hideStatusOverlay();
+    // Fallback to non-streaming server call so operation still completes
+    performInsertAtServer(insertAt).catch((err) => {
+      alert('Insert failed: ' + (err && err.message ? err.message : err));
+    });
+  });
+
+  // Network-level error
+  es.onerror = () => {
+    stopStatusOverlayTicker();
+    console.warn('EventSource network error; falling back.');
+    try { es.close(); } catch (_) {}
+    hideStatusOverlay();
+    performInsertAtServer(insertAt).catch((err) => {
+      alert('Insert failed: ' + (err && err.message ? err.message : err));
+    });
+  };
+}
+
+// Modified insertChannelAtPrompt as per instructions:
+function insertChannelAtPrompt() {
+  const value = prompt('Enter the channel number to insert before (e.g., 100):');
+  if (value === null) return; // user cancelled
+  const n = parseInt(String(value).trim(), 10);
+  if (!Number.isFinite(n) || n < 0) {
+    alert('Please enter a valid non-negative integer channel number.');
+    return;
+  }
+  // Prefer streaming progress for per-item updates
+  try {
+    performInsertAtStream(n);
+  } catch (e) {
+    // Safety fallback
+    console.warn('Streaming insert failed to start, falling back:', e);
+    performInsertAtServer(n).catch((err) => {
+      if (err && (err.status === 404 || err.message === 'Failed to fetch')) {
+        performInsertAt(n);
+      } else {
+        alert('Insert failed: ' + (err && err.message ? err.message : err));
+      }
+    });
   }
 }
 

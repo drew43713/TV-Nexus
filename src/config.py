@@ -21,7 +21,8 @@ DEFAULT_CONFIG = {
     "DOMAIN_NAME": "",   # e.g. "mydomain.com"
     "EPG_COLORS_FILE": os.path.join("config", "epg", "epg_colors.json"),
     # New: how often to automatically re-parse EPG (in minutes); 0 = disabled
-    "REPARSE_EPG_INTERVAL": 1440  # 1440 = 24 hours
+    "REPARSE_EPG_INTERVAL": 1440,  # 1440 = 24 hours
+    "USE_PREGENERATED_DATA": False,
 }
 
 # Ensure the config directory exists.
@@ -51,6 +52,18 @@ for key in config.keys():
                 config[key] = int(env_value)
             except ValueError:
                 print(f"Invalid {key} value in environment: {env_value}. Using {config[key]} instead.")
+        elif key in ["USE_PREGENERATED_DATA"]:
+            # Accept typical truthy/falsey strings
+            truthy = {"1", "true", "yes", "on"}
+            falsy = {"0", "false", "no", "off"}
+            val = str(env_value).strip().lower()
+            if val in truthy:
+                config[key] = True
+            elif val in falsy:
+                config[key] = False
+            else:
+                # Fallback: any non-empty string is treated as True
+                config[key] = bool(val)
         else:
             config[key] = env_value
 
@@ -86,6 +99,7 @@ DOMAIN_NAME = config["DOMAIN_NAME"]
 EPG_COLORS_FILE = config["EPG_COLORS_FILE"]
 REPARSE_EPG_INTERVAL = config["REPARSE_EPG_INTERVAL"]  # In minutes
 URL_SCHEME = config["URL_SCHEME"]
+USE_PREGENERATED_DATA = config["USE_PREGENERATED_DATA"]
 
 # Build the BASE_URL once using the selected URL_SCHEME:
 # If DOMAIN_NAME is set (non-empty), use {URL_SCHEME}://{DOMAIN_NAME}

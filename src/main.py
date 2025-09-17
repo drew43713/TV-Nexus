@@ -10,7 +10,7 @@ from .database import init_db
 from .m3u import load_m3u_files
 
 # Import 'config' and the new function for re-parse tasks
-from .config import config, LOGOS_DIR, CUSTOM_LOGOS_DIR
+from .config import config, LOGOS_DIR, CUSTOM_LOGOS_DIR, USE_PREGENERATED_DATA
 from .tasks import start_epg_reparse_task
 
 app = FastAPI()
@@ -29,8 +29,11 @@ app.include_router(status_router)
 async def startup_event():
     # Initialize the database and load M3U files on startup.
     init_db()
-    load_m3u_files()
-
-    # If REPARSE_EPG_INTERVAL > 0, spawn the background re-parse immediately.
-    if config["REPARSE_EPG_INTERVAL"] > 0:
-        await start_epg_reparse_task()
+    if not USE_PREGENERATED_DATA:
+        # Load M3U files and start EPG background task as usual
+        load_m3u_files()
+        if config["REPARSE_EPG_INTERVAL"] > 0:
+            await start_epg_reparse_task()
+    else:
+        # Skipping M3U load and EPG re-parse as requested; using pre-generated data
+        print("[Startup] USE_PREGENERATED_DATA is True: skipping M3U load and EPG re-parse task.")

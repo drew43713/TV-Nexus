@@ -8,6 +8,7 @@ from fastapi.responses import (
     HTMLResponse, RedirectResponse
 )
 import os
+import asyncio
 from .config import DB_FILE, MODIFIED_EPG_DIR, EPG_DIR, HOST_IP, PORT, CUSTOM_LOGOS_DIR, LOGOS_DIR, TUNER_COUNT, CONFIG_FILE_PATH
 from .database import init_db, swap_channel_numbers
 from .epg import (
@@ -209,6 +210,181 @@ def update_channel_number(current_id: int = Form(...), new_id: int = Form(...)):
     
     return RedirectResponse(url="/", status_code=303)
 
+@router.post("/insert_channel_at")
+def insert_channel_at(insert_at: int = Form(...), swap: bool = Form(False)):
+    """
+    Shifts all channels with channel_number >= insert_at up by 1 in a single transaction.
+    - Performs updates in descending order to avoid unique constraint collisions.
+    - Uses a short IMMEDIATE transaction to reduce lock time.
+    - After commit, updates EPG references for each shifted channel.
+    The `swap` parameter is accepted for symmetry with client code but ignored here.
+    """
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        c = conn.cursor()
+        # Begin a write transaction immediately to avoid waiting during updates
+        c.execute("BEGIN IMMEDIATE")
+
+        # Gather affected channel numbers in descending order
+        c.execute(
+            """
+            SELECT channel_number
+              FROM channels
+             WHERE channel_number >= ?
+             ORDER BY channel_number DESC
+            """,
+            (insert_at,)
+        )
+        rows = c.fetchall()
+        affected = [r[0] for r in rows]
+
+        if not affected:
+            c.execute("COMMIT")
+            conn.close()
+            return JSONResponse({"success": True, "shifted": 0})
+
+        # Shift in descending order to avoid collisions
+        for ch_num in affected:
+            c.execute(
+                "UPDATE channels SET channel_number = ? WHERE channel_number = ?",
+                (ch_num + 1, ch_num)
+            )
+
+        conn.commit()
+        conn.close()
+
+        # Update EPG references after the DB commit (no DB lock held now)
+        try:
+            for ch_num in affected:
+                # swap=False semantics for a pure shift
+                update_modified_epg(ch_num, ch_num + 1, False)
+        except Exception as epg_err:
+            # Log-only: EPG update failure shouldn't revert DB changes
+            print(f"[WARNING] EPG update after insert failed: {epg_err}")
+
+        return JSONResponse({"success": True, "shifted": len(affected)})
+    except Exception as e:
+        try:
+            # Attempt rollback if transaction was open
+            conn.rollback()
+        except Exception:
+            pass
+        try:
+            conn.close()
+        except Exception:
+            pass
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+from fastapi import Response
+from typing import Iterator
+
+@router.get("/insert_channel_at_stream")
+async def insert_channel_at_stream(insert_at: int = Query(...)):
+    """
+    Server-Sent Events (SSE) endpoint that performs the same shifting logic
+    as /insert_channel_at but streams progress messages like:
+      data: Shifting channel 101 -> 102\n\n
+    It ends with a final event:
+      event: done\n
+    Notes:
+    - Uses a single IMMEDIATE transaction for the DB updates.
+    - Updates are executed in descending order to avoid unique collisions.
+    - After commit, EPG references are updated and streamed as well.
+    """
+    async def event_stream():
+        conn = None
+        try:
+            conn = sqlite3.connect(DB_FILE)
+            c = conn.cursor()
+            # Acquire write lock up front
+            c.execute("BEGIN IMMEDIATE")
+
+            # Determine affected channels (descending)
+            c.execute(
+                """
+                SELECT channel_number
+                  FROM channels
+                 WHERE channel_number >= ?
+                 ORDER BY channel_number DESC
+                """,
+                (insert_at,)
+            )
+            rows = c.fetchall()
+            affected = [r[0] for r in rows]
+
+            yield f"data: Preparing to shift {len(affected)} channel(s) at and above {insert_at}\n\n"
+            await asyncio.sleep(0)
+
+            if not affected:
+                # Nothing to do; commit and finish
+                conn.commit()
+                yield "event: done\ndata: {\"shifted\": 0}\n\n"
+                await asyncio.sleep(0)
+                return
+
+            # Perform updates, reporting each step
+            for idx, ch_num in enumerate(affected):
+                new_num = ch_num + 1
+                c.execute(
+                    "UPDATE channels SET channel_number = ? WHERE channel_number = ?",
+                    (new_num, ch_num)
+                )
+                yield f"data: Shifting channel {ch_num} -> {new_num}\n\n"
+                await asyncio.sleep(0)
+                if (idx % 10) == 9:
+                    # periodic keep-alive comment to defeat buffering
+                    yield ": keep-alive\n\n"
+                    await asyncio.sleep(0)
+
+            # Commit DB changes
+            conn.commit()
+            yield "data: Database commit complete. Finalizing channel shifts…\n\n"
+            await asyncio.sleep(0)
+
+            # Update EPG references after commit (no DB lock held)
+            failures = 0
+            for idx, ch_num in enumerate(affected):
+                try:
+                    update_modified_epg(ch_num, ch_num + 1, False)
+                    yield f"data: Shift finalized for channel {ch_num} -> {ch_num + 1}\n\n"
+                    await asyncio.sleep(0)
+                except Exception as epg_err:
+                    failures += 1
+                    yield f"data: [WARN] Finalization step failed for channel {ch_num}: {str(epg_err)}\n\n"
+                    await asyncio.sleep(0)
+                if (idx % 10) == 9:
+                    yield ": keep-alive\n\n"
+                    await asyncio.sleep(0)
+
+            yield f"event: done\ndata: {{\"shifted\": {len(affected)}, \"epg_failures\": {failures}}}\n\n"
+            await asyncio.sleep(0)
+        except Exception as e:
+            # Attempt rollback if possible
+            try:
+                if conn:
+                    conn.rollback()
+            except Exception:
+                pass
+            err_msg = str(e).replace("\n", " ")
+            yield f"event: error\ndata: {err_msg}\n\n"
+            await asyncio.sleep(0)
+        finally:
+            try:
+                if conn:
+                    conn.close()
+            except Exception:
+                pass
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )
 
 @router.post("/update_channel_active")
 def update_channel_active(channel_id: int = Form(...), active: bool = Form(...)):
