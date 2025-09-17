@@ -11,6 +11,28 @@ document.addEventListener("DOMContentLoaded", function () {
     }
     localStorage.removeItem("filterText");
   }
+
+  // Restore scroll position or specific channel row if available
+  const restoreChannelId = localStorage.getItem("restoreScrollChannelId");
+  const restoreScrollY = localStorage.getItem("restoreScrollY");
+  if (restoreChannelId) {
+    // Try to scroll the specific row into view
+    const tryScrollToRow = () => {
+      const row = document.querySelector(`tr[data-channel="${restoreChannelId}"]`);
+      if (row) {
+        row.scrollIntoView({ block: "center", inline: "nearest" });
+      } else if (restoreScrollY) {
+        window.scrollTo(0, parseInt(restoreScrollY, 10));
+      }
+      localStorage.removeItem("restoreScrollChannelId");
+      localStorage.removeItem("restoreScrollY");
+    };
+    // Defer to ensure table has rendered
+    requestAnimationFrame(() => setTimeout(tryScrollToRow, 0));
+  } else if (restoreScrollY) {
+    window.scrollTo(0, parseInt(restoreScrollY, 10));
+    localStorage.removeItem("restoreScrollY");
+  }
 });
 
 document.addEventListener("DOMContentLoaded", function () {
@@ -270,7 +292,9 @@ function autoNumberChannels() {
       if (data.success) {
         alert("Channels renumbered successfully!");
         localStorage.setItem("filterText", document.getElementById("search-input").value);
-        window.location.reload();
+        const url = new URL(window.location.href);
+        url.searchParams.set('_ts', Date.now().toString());
+        window.location.replace(url.toString());
       } else {
         alert("Error: " + data.message);
       }
@@ -509,23 +533,105 @@ function updateChannelNumber(input) {
   let newValue = input.value.trim();
   if (oldValue === newValue || newValue === "") {
     input.value = oldValue;
-    return;
+    return Promise.resolve(false);
   }
   let formData = new FormData();
   formData.append("current_id", oldValue);
   formData.append("new_id", newValue);
-  fetch("/update_channel_number", { method: "POST", body: formData })
+  return fetch("/update_channel_number", { method: "POST", body: formData })
     .then(response => {
       if (!response.ok) {
         return response.json().then(errBody => {
           throw new Error(errBody.detail || "Unknown error");
         });
       }
-      return response.text();
+      // Update the data-old-value so subsequent edits compare against the new value
+      input.setAttribute("data-old-value", newValue);
+      // Update the containing row's data attributes so other features (like the modal) see the new number
+      const row = input.closest('tr');
+      if (row) {
+        row.setAttribute('data-channel-number', newValue);
+        // If the cell has any mirrored text nodes for the number, update them here if needed.
+        // (Assumes the input displays the number; no extra text update required.)
+        row.classList.add('saved-flash');
+        setTimeout(() => row.classList.remove('saved-flash'), 600);
+      }
+      return true;
     })
     .catch(error => {
       alert("Error updating channel number: " + error.message);
       input.value = oldValue;
+      return false;
+    });
+}
+
+// Fetch fresh page HTML and replace only the channels table body, preserving filter and scroll
+function refreshTableBodyPreservingState(focusChannelId) {
+  const table = document.getElementById('channels-table');
+  if (!table) return;
+  const oldTbody = table.querySelector('tbody');
+  if (!oldTbody) return;
+
+  const searchInput = document.getElementById('search-input');
+  const currentFilter = searchInput ? searchInput.value : '';
+  const prevScrollY = window.scrollY;
+
+  // Measure anchor position (the edited row) relative to viewport before replacement
+  let anchorTop = null;
+  if (focusChannelId) {
+    const anchorRow = document.querySelector(`tr[data-channel="${focusChannelId}"]`);
+    if (anchorRow) {
+      const rect = anchorRow.getBoundingClientRect();
+      anchorTop = rect.top;
+    }
+  }
+
+  const url = new URL(window.location.href);
+  url.searchParams.set('_ts', Date.now().toString());
+
+  fetch(url.toString(), { cache: 'no-store' })
+    .then(resp => resp.text())
+    .then(html => {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(html, 'text/html');
+      const newTbody = doc.querySelector('#channels-table tbody');
+      if (!newTbody) return;
+
+      // Replace tbody
+      oldTbody.parentNode.replaceChild(newTbody, oldTbody);
+
+      // Re-apply filter after replacement
+      if (searchInput) {
+        searchInput.value = currentFilter || '';
+        if (currentFilter) {
+          filterTable();
+        }
+      }
+
+      // Disable smooth scroll to avoid animated jumps during correction
+      const prevBehavior = document.documentElement.style.scrollBehavior;
+      document.documentElement.style.scrollBehavior = 'auto';
+
+      if (focusChannelId) {
+        const newAnchor = document.querySelector(`tr[data-channel="${focusChannelId}"]`);
+        if (newAnchor && anchorTop !== null) {
+          const newRect = newAnchor.getBoundingClientRect();
+          const delta = newRect.top - anchorTop;
+          if (Math.abs(delta) > 1) {
+            window.scrollBy(0, delta);
+          }
+        } else {
+          window.scrollTo(0, prevScrollY);
+        }
+      } else {
+        window.scrollTo(0, prevScrollY);
+      }
+
+      // Restore previous scroll behavior
+      document.documentElement.style.scrollBehavior = prevBehavior;
+    })
+    .catch(err => {
+      console.error('Partial table refresh failed:', err);
     });
 }
 
@@ -560,7 +666,10 @@ function saveAllChanges() {
         if (newActive === "1") {
           refreshChannelEpg(currentChannelId);
         }
-        window.location.reload();
+        // Refresh only the table body and keep the edited row anchored
+        refreshTableBodyPreservingState(currentChannelId);
+        // Close the modal without navigating away
+        closeModal();
       } else {
         alert("Failed to update channel properties: " + data.error);
       }
@@ -589,7 +698,9 @@ function deleteChannel() {
     .then(data => {
       if (data.success) {
         alert(data.message);
-        window.location.reload();
+        const url = new URL(window.location.href);
+        url.searchParams.set('_ts', Date.now().toString());
+        window.location.replace(url.toString());
       } else {
         alert("Failed to delete channel: " + data.error);
       }
@@ -625,6 +736,40 @@ document.addEventListener("DOMContentLoaded", function () {
     header.addEventListener("click", () => {
       sortTableByColumn(table, index);
     });
+  });
+  
+  // Commit inline edits when pressing Enter inside inputs in the table
+  table.addEventListener("keydown", function(e) {
+    const target = e.target;
+    if (e.key === "Enter" && target && target.tagName === "INPUT") {
+      e.preventDefault();
+      const inputEl = target;
+      const row = inputEl.closest('tr');
+      const channelId = row ? row.getAttribute('data-channel') : null;
+      // Mark as just-saved to prevent duplicate save on subsequent blur
+      inputEl.dataset.justSaved = '1';
+      Promise.resolve(updateChannelNumber(inputEl)).then((success) => {
+        // Clear the marker shortly after
+        setTimeout(() => { delete inputEl.dataset.justSaved; }, 200);
+        if (success) {
+          // Replace only the table body with fresh content to reflect server-side changes
+          refreshTableBodyPreservingState(channelId);
+        } else {
+          // Exit editing gracefully
+          inputEl.blur();
+        }
+      });
+    }
+  });
+
+  table.addEventListener("focusout", function(e) {
+    const target = e.target;
+    if (target && target.tagName === "INPUT") {
+      // If Enter just triggered a save, skip saving again on blur
+      if (target.dataset.justSaved === '1') return;
+      // Fire and forget; no reload on blur
+      Promise.resolve(updateChannelNumber(target));
+    }
   });
   
   function getCellValue(cell) {
@@ -674,3 +819,4 @@ function filterTable() {
     tr[i].style.display = rowContainsQuery ? "" : "none";
   }
 }
+
