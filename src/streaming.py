@@ -1,7 +1,7 @@
 import subprocess
 import threading
 import queue
-from .config import DB_FILE  # if needed elsewhere
+from .config import config  # access runtime ffmpeg/gpu decisions
 import sqlite3
 
 streams_lock = threading.Lock()
@@ -58,16 +58,45 @@ class SharedStream:
                     pass
                 
 def get_shared_stream(channel_id: int, stream_url: str) -> SharedStream:
-    # Build your FFmpeg command.
+    # Build your FFmpeg command, optionally enabling CUDA if available
     ffmpeg_cmd = [
         "ffmpeg", "-hide_banner", "-loglevel", "error",
         "-user_agent", "VLC/3.0.20-git LibVLC/3.0.20-git",
+    ]
+
+    # Insert hardware acceleration flags (before input) if configured
+    accel_args = config.get("FFMPEG_ACCEL_ARGS", "") or ""
+    if accel_args:
+        ffmpeg_cmd.extend(accel_args.split())
+
+    # Input and general options
+    ffmpeg_cmd.extend([
         "-re", "-i", stream_url,
         "-max_muxing_queue_size", "1024",
-        "-c:v", "copy", "-c:a", "aac",
-        "-preset", "ultrafast",
-        "-f", "mpegts", "pipe:1"
-    ]
+    ])
+
+    # Choose video codec: NVENC if configured, otherwise copy
+    encoder = config.get("FFMPEG_ENCODER", "") or ""
+    if encoder:
+        ffmpeg_cmd.extend(["-c:v", encoder])
+        # Apply sensible defaults for NVENC encoders
+        if encoder.endswith("_nvenc"):
+            ffmpeg_cmd.extend([
+                "-preset", "p5",   # NVENC preset scale p1..p7 (speed..quality)
+                "-rc", "vbr",
+                "-cq", "23",
+                "-b:v", "3M",
+                "-maxrate", "6M",
+            ])
+    else:
+        ffmpeg_cmd.extend(["-c:v", "copy"])  # no GPU / keep original video
+
+    # Audio: transcode to AAC for compatibility
+    ffmpeg_cmd.extend(["-c:a", "aac"])
+
+    # Output as MPEG-TS to stdout
+    ffmpeg_cmd.extend(["-f", "mpegts", "pipe:1"])
+
     with streams_lock:
         if channel_id in shared_streams and shared_streams[channel_id].is_running:
             return shared_streams[channel_id]
