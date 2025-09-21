@@ -143,9 +143,17 @@ def load_m3u_files():
                     VALUES (?, ?, ?, ?, ?, ?)
                 """, (name_part, url, tvg_name, tvg_logo_local, group_title, 0))
                 new_id = c.lastrowid
-                # Assign channel_number to be equal to the new record's primary key.
-                c.execute("UPDATE channels SET channel_number = ? WHERE id = ?", (new_id, new_id))
-                print(f"[INFO] Inserted new channel '{key}' with logo. (Inactive by default, channel_number set to {new_id})")
+                # Assign channel_number to the next available positive integer not currently used.
+                c.execute("SELECT channel_number FROM channels WHERE channel_number IS NOT NULL ORDER BY channel_number ASC")
+                used_numbers = [row[0] for row in c.fetchall() if isinstance(row[0], int)]
+                next_number = 1
+                for n in used_numbers:
+                    if n == next_number:
+                        next_number += 1
+                    elif n > next_number:
+                        break
+                c.execute("UPDATE channels SET channel_number = ? WHERE id = ?", (next_number, new_id))
+                print(f"[INFO] Inserted new channel '{key}' with logo. (Inactive by default, channel_number set to {next_number})")
             idx += 2
         else:
             idx += 1
