@@ -81,13 +81,12 @@ app.include_router(status_router)
 def gpu_health():
     """Return information about NVIDIA/CUDA availability inside this container."""
     info = detect_cuda_support()
-    # Also reflect what the app decided at startup
-    decided = {
-        "use_cuda": bool(config.get("USE_CUDA", False)),
-        "ffmpeg_accel_args": config.get("FFMPEG_ACCEL_ARGS", ""),
-        "ffmpeg_encoder": config.get("FFMPEG_ENCODER", ""),
+    # Reflect any user-selected ffmpeg profile if available (set elsewhere, e.g., streaming.py/settings)
+    selection = {
+        "ffmpeg_profile": config.get("FFMPEG_PROFILE"),
+        "ffmpeg_custom_args": config.get("FFMPEG_CUSTOM_ARGS"),
     }
-    return {"detection": info, "decision": decided}
+    return {"detection": info, "selection": selection}
 
 @app.on_event("startup")
 async def startup_event():
@@ -115,38 +114,9 @@ async def startup_event():
         else:
             print(f"[Startup][GPU] FFmpeg -hwaccels failed (rc={ff_rc}).")
 
-    use_cuda = (not force_disable) and info.get("gpu_available") and info.get("cuda_in_hwaccels")
-
-    if use_cuda:
-        print("[Startup][GPU] Decision: USE_CUDA=True (GPU present and FFmpeg reports 'cuda' hwaccel)")
-    else:
-        reason = []
-        if force_disable:
-            reason.append("FORCE_DISABLE_CUDA=1")
-        if not info.get("gpu_available"):
-            reason.append("nvidia-smi unavailable")
-        if not info.get("cuda_in_hwaccels"):
-            reason.append("FFmpeg lacks 'cuda' hwaccel")
-        print(f"[Startup][GPU] Decision: USE_CUDA=False ({', '.join(reason) if reason else 'unknown reason'})")
-
-    # Persist decision into config for other modules to use when constructing ffmpeg commands
-    config["USE_CUDA"] = bool(use_cuda)
-    if use_cuda:
-        # Typical CUDA acceleration flags; adjust as needed where you build commands
-        # -hwaccel cuda enables decode acceleration (when supported)
-        # -hwaccel_output_format cuda keeps frames on GPU
-        # Use NVENC encoders when encoding
-        config["FFMPEG_ACCEL_ARGS"] = "-hwaccel cuda -hwaccel_output_format cuda"
-        # Choose a sensible default encoder; callers can override per codec
-        config["FFMPEG_ENCODER"] = "h264_nvenc"
-        print("[Startup] CUDA detected. Enabling FFmpeg CUDA acceleration and NVENC by default.")
-    else:
-        config["FFMPEG_ACCEL_ARGS"] = ""
-        config["FFMPEG_ENCODER"] = ""
-        if force_disable:
-            print("[Startup] FORCE_DISABLE_CUDA is set. CUDA acceleration disabled.")
-        else:
-            print("[Startup] CUDA not available. Running with CPU-only FFmpeg.")
+    # Note: We no longer auto-select an ffmpeg profile here. Detection is logged for transparency,
+    # but the active profile is chosen by the user (e.g., via settings/streaming module).
+    print("[Startup][GPU] Auto-selection disabled. Choose an ffmpeg profile in settings.")
 
     # Initialize the database and load M3U files on startup.
     init_db()

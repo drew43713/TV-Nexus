@@ -23,6 +23,8 @@ DEFAULT_CONFIG = {
     # New: how often to automatically re-parse EPG (in minutes); 0 = disabled
     "REPARSE_EPG_INTERVAL": 1440,  # 1440 = 24 hours
     "USE_PREGENERATED_DATA": False,
+    "FFMPEG_PROFILE": "CPU",
+    "FFMPEG_CUSTOM_PROFILES": {},
 }
 
 # Ensure the config directory exists.
@@ -64,6 +66,19 @@ for key in config.keys():
             else:
                 # Fallback: any non-empty string is treated as True
                 config[key] = bool(val)
+        elif key == "FFMPEG_CUSTOM_PROFILES":
+            # Accept JSON string for custom profiles (name -> arg string)
+            try:
+                parsed = json.loads(env_value)
+                if isinstance(parsed, dict):
+                    config[key] = parsed
+                else:
+                    print(f"Invalid FFMPEG_CUSTOM_PROFILES in environment (not a dict). Ignoring.")
+            except Exception as e:
+                print(f"Invalid FFMPEG_CUSTOM_PROFILES JSON: {e}. Ignoring.")
+        elif key == "FFMPEG_PROFILE":
+            # Accept a simple string name for the selected profile
+            config[key] = str(env_value)
         else:
             config[key] = env_value
 
@@ -100,6 +115,8 @@ EPG_COLORS_FILE = config["EPG_COLORS_FILE"]
 REPARSE_EPG_INTERVAL = config["REPARSE_EPG_INTERVAL"]  # In minutes
 URL_SCHEME = config["URL_SCHEME"]
 USE_PREGENERATED_DATA = config["USE_PREGENERATED_DATA"]
+FFMPEG_PROFILE = config["FFMPEG_PROFILE"]
+FFMPEG_CUSTOM_PROFILES = config["FFMPEG_CUSTOM_PROFILES"]
 
 # Build the BASE_URL once using the selected URL_SCHEME:
 # If DOMAIN_NAME is set (non-empty), use {URL_SCHEME}://{DOMAIN_NAME}

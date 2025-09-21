@@ -70,6 +70,9 @@ window.addEventListener("DOMContentLoaded", () => {
   document.querySelectorAll(".epg-color-picker").forEach((picker) => {
     picker.addEventListener("change", updateEpgColor);
   });
+
+  // Initialize FFmpeg Profiles UI (modal)
+  initFfmpegProfilesUI();
 });
 
 function updateStreamStatus() {
@@ -336,3 +339,254 @@ function updateEpgColor(event) {
       alert("Error updating color: " + error.message);
     });
 }
+
+// ---------------- FFmpeg Profiles Modal UI ----------------
+function initFfmpegProfilesUI() {
+  // Inject styles once
+  if (!document.getElementById("ffmpeg-profiles-styles")) {
+    const style = document.createElement("style");
+    style.id = "ffmpeg-profiles-styles";
+    style.textContent = `
+      /* Base styles use inheritance so they follow the page theme */
+      .ffmpeg-fab { position: fixed; right: 16px; bottom: 16px; z-index: 1000; background: var(--bs-primary, #0d6efd); color: var(--bs-btn-color, #fff); border: 1px solid transparent; border-radius: var(--bs-border-radius-pill, 50px); padding: 10px 14px; cursor: pointer; box-shadow: 0 2px 6px rgba(0,0,0,0.2); font: inherit; }
+      .ffmpeg-fab:hover { background: var(--bs-primary-hover, #0b5ed7); }
+      .ffmpeg-modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: none; z-index: 1000; }
+      .ffmpeg-modal { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: inherit; color: inherit; border: 1px solid; border-color: var(--bs-border-color, rgba(0,0,0,0.15)); border-radius: var(--bs-border-radius-lg, .5rem); width: min(800px, 92vw); max-height: 80vh; overflow: auto; display: none; z-index: 1001; box-shadow: 0 6px 20px rgba(0,0,0,0.25); }
+      .ffmpeg-modal header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid; border-bottom-color: var(--bs-border-color, rgba(0,0,0,0.15)); }
+      .ffmpeg-modal h2 { margin: 0; font-size: 1.1rem; }
+      .ffmpeg-modal .close { background: transparent; border: none; font-size: 1.25rem; cursor: pointer; color: inherit; }
+      .ffmpeg-modal .content { padding: 12px 16px; }
+      .ffmpeg-profiles-list table { width: 100%; border-collapse: collapse; color: inherit; }
+      .ffmpeg-profiles-list th, .ffmpeg-profiles-list td { border-bottom: 1px solid; border-bottom-color: var(--bs-border-color, rgba(0,0,0,0.15)); padding: 8px; text-align: left; vertical-align: top; }
+      .ffmpeg-profiles-list tr:hover { background: var(--bs-table-hover-bg, rgba(0,0,0,0.03)); }
+      .ffmpeg-badge { display: inline-block; padding: 2px 6px; border-radius: 10px; font-size: 12px; background: var(--bs-secondary-bg, #e9ecef); color: var(--bs-secondary-color, #495057); margin-left: 8px; }
+      .ffmpeg-actions button, #ffmpeg-add-profile-btn { background: var(--bs-btn-bg, transparent); color: inherit; border: 1px solid; border-color: var(--bs-border-color, rgba(0,0,0,0.15)); border-radius: var(--bs-border-radius, .375rem); padding: 6px 10px; font: inherit; cursor: pointer; }
+      .ffmpeg-actions button:hover, #ffmpeg-add-profile-btn:hover { background: var(--bs-secondary-bg, rgba(0,0,0,0.04)); }
+      .ffmpeg-actions button[disabled] { opacity: .6; cursor: not-allowed; }
+      .ffmpeg-form { display: grid; grid-template-columns: 140px 1fr; gap: 8px 12px; align-items: center; margin-top: 12px; }
+      .ffmpeg-form label { font-weight: 600; }
+      .ffmpeg-form input, .ffmpeg-form textarea { width: 100%; padding: 6px 8px; background: inherit; color: inherit; border: 1px solid; border-color: var(--bs-border-color, rgba(0,0,0,0.15)); border-radius: var(--bs-border-radius, .375rem); font: inherit; }
+      .ffmpeg-form .hint { grid-column: 1 / -1; font-size: 12px; color: var(--bs-secondary-color, #6c757d); }
+      .ffmpeg-error { color: var(--bs-danger, #dc3545); margin-top: 8px; }
+      .ffmpeg-success { color: var(--bs-success, #198754); margin-top: 8px; }
+      code { color: inherit; }
+
+      /* System dark mode adjustments when the page doesn't expose variables */
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme="light"]) .ffmpeg-modal { background: var(--bs-body-bg, #1e1e1e); color: var(--bs-body-color, #e9ecef); border-color: var(--bs-border-color, #2b2b2b); }
+        :root:not([data-theme="light"]) .ffmpeg-modal header { border-bottom-color: var(--bs-border-color, #2b2b2b); }
+        :root:not([data-theme="light"]) .ffmpeg-profiles-list th, :root:not([data-theme="light"]) .ffmpeg-profiles-list td { border-bottom-color: var(--bs-border-color, #2b2b2b); }
+        :root:not([data-theme="light"]) .ffmpeg-profiles-list tr:hover { background: var(--bs-table-hover-bg, rgba(255,255,255,0.06)); }
+        :root:not([data-theme="light"]) .ffmpeg-badge { background: var(--bs-secondary-bg, #2a2a2a); color: var(--bs-secondary-color, #cfd3d7); }
+        :root:not([data-theme="light"]) .ffmpeg-actions button, :root:not([data-theme="light"]) #ffmpeg-add-profile-btn { border-color: var(--bs-border-color, #3a3a3a); }
+        :root:not([data-theme="light"]) .ffmpeg-actions button:hover, :root:not([data-theme="light"]) #ffmpeg-add-profile-btn:hover { background: var(--bs-secondary-bg, #2a2a2a); }
+        :root:not([data-theme="light"]) .ffmpeg-form input, :root:not([data-theme="light"]) .ffmpeg-form textarea { border-color: var(--bs-border-color, #3a3a3a); background: var(--bs-body-bg, #1e1e1e); color: var(--bs-body-color, #e9ecef); }
+        :root:not([data-theme="light"]) .ffmpeg-form .hint { color: var(--bs-secondary-color, #9aa0a6); }
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  // Create floating action button
+  if (!document.getElementById("ffmpeg-profiles-fab")) {
+    const fab = document.createElement("button");
+    fab.id = "ffmpeg-profiles-fab";
+    fab.className = "ffmpeg-fab";
+    fab.textContent = "FFmpeg Profiles";
+    fab.title = "Manage FFmpeg profiles";
+    fab.addEventListener("click", openFfmpegProfilesModal);
+    document.body.appendChild(fab);
+  }
+
+  // Create modal/backdrop if not present
+  if (!document.getElementById("ffmpeg-profiles-backdrop")) {
+    const backdrop = document.createElement("div");
+    backdrop.id = "ffmpeg-profiles-backdrop";
+    backdrop.className = "ffmpeg-modal-backdrop";
+    backdrop.addEventListener("click", closeFfmpegProfilesModal);
+
+    const modal = document.createElement("div");
+    modal.id = "ffmpeg-profiles-modal";
+    modal.className = "ffmpeg-modal";
+
+    modal.innerHTML = `
+      <header>
+        <h2>FFmpeg Profiles</h2>
+        <button class="close" aria-label="Close">×</button>
+      </header>
+      <div class="content">
+        <div id="ffmpeg-profiles-feedback"></div>
+        <section class="ffmpeg-profiles-list">
+          <h3 style="margin-top:0">Available Profiles</h3>
+          <div id="ffmpeg-profiles-table"></div>
+        </section>
+        <section class="ffmpeg-add-profile">
+          <h3>Add Custom Profile</h3>
+          <div class="ffmpeg-form">
+            <label for="ffmpeg-profile-name">Name</label>
+            <input id="ffmpeg-profile-name" type="text" placeholder="e.g., MyH264Profile" />
+            <label for="ffmpeg-profile-args">Args</label>
+            <textarea id="ffmpeg-profile-args" rows="3" placeholder="-hide_banner -loglevel error -re -i {input} -c:v libx264 -preset fast -c:a aac -f mpegts pipe:1"></textarea>
+            <div class="hint">Include {input} where the URL should go. Do not include the initial 'ffmpeg' token.</div>
+            <div style="grid-column: 1 / -1;">
+              <button id="ffmpeg-add-profile-btn">Add Profile</button>
+            </div>
+          </div>
+          <div id="ffmpeg-add-profile-feedback"></div>
+        </section>
+      </div>
+    `;
+
+    document.body.appendChild(backdrop);
+    document.body.appendChild(modal);
+
+    modal.querySelector(".close").addEventListener("click", closeFfmpegProfilesModal);
+    document.getElementById("ffmpeg-add-profile-btn").addEventListener("click", onAddFfmpegProfile);
+  }
+}
+
+function openFfmpegProfilesModal() {
+  const backdrop = document.getElementById("ffmpeg-profiles-backdrop");
+  const modal = document.getElementById("ffmpeg-profiles-modal");
+  if (!backdrop || !modal) return;
+  backdrop.style.display = "block";
+  modal.style.display = "block";
+  loadFfmpegProfiles();
+}
+
+function closeFfmpegProfilesModal() {
+  const backdrop = document.getElementById("ffmpeg-profiles-backdrop");
+  const modal = document.getElementById("ffmpeg-profiles-modal");
+  if (backdrop) backdrop.style.display = "none";
+  if (modal) modal.style.display = "none";
+}
+
+async function loadFfmpegProfiles() {
+  const tableContainer = document.getElementById("ffmpeg-profiles-table");
+  const feedback = document.getElementById("ffmpeg-profiles-feedback");
+  feedback.textContent = "";
+  tableContainer.innerHTML = "Loading...";
+
+  try {
+    const res = await fetch("/api/ffmpeg/profiles");
+    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+    const data = await res.json();
+    renderFfmpegProfilesTable(data);
+  } catch (err) {
+    tableContainer.innerHTML = "";
+    feedback.innerHTML = `<div class="ffmpeg-error">Unable to load profiles (is the backend endpoint implemented?) — ${err}</div>`;
+  }
+}
+
+function renderFfmpegProfilesTable(data) {
+  const tableContainer = document.getElementById("ffmpeg-profiles-table");
+  const profiles = (data && data.profiles) || [];
+  const selected = (data && data.selected) || "CPU";
+
+  if (!profiles.length) {
+    tableContainer.innerHTML = "<p>No profiles found.</p>";
+    return;
+  }
+
+  let html = "<table><thead><tr>" +
+             "<th>Name</th>" +
+             "<th>Args</th>" +
+             "<th>Actions</th>" +
+             "</tr></thead><tbody>";
+
+  for (const p of profiles) {
+    const name = p.name || "(unnamed)";
+    const args = Array.isArray(p.args) ? p.args.join(" ") : (p.args || "");
+    const isSelected = name === selected;
+    html += `<tr>
+      <td>${name}${isSelected ? '<span class="ffmpeg-badge">Selected</span>' : ''}</td>
+      <td><code>${escapeHtml(args)}</code></td>
+      <td class="ffmpeg-actions">
+        <button data-action="select" data-name="${encodeURIComponent(name)}" ${isSelected ? 'disabled' : ''}>Select</button>
+        <button data-action="delete" data-name="${encodeURIComponent(name)}" ${name === 'CPU' || name === 'CUDA' ? 'disabled' : ''}>Delete</button>
+      </td>
+    </tr>`;
+  }
+
+  html += "</tbody></table>";
+  tableContainer.innerHTML = html;
+
+  // Wire actions
+  tableContainer.querySelectorAll("button[data-action]").forEach((btn) => {
+    const action = btn.getAttribute("data-action");
+    const rawName = btn.getAttribute("data-name");
+    const name = rawName ? decodeURIComponent(rawName) : "";
+    if (action === "select") btn.addEventListener("click", () => selectFfmpegProfile(name));
+    if (action === "delete") btn.addEventListener("click", () => deleteFfmpegProfile(name));
+  });
+}
+
+async function selectFfmpegProfile(name) {
+  const feedback = document.getElementById("ffmpeg-profiles-feedback");
+  feedback.textContent = "";
+  try {
+    const res = await fetch("/api/ffmpeg/profiles/select", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    });
+    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+    await loadFfmpegProfiles();
+    feedback.innerHTML = `<div class="ffmpeg-success">Selected profile: <strong>${escapeHtml(name)}</strong></div>`;
+  } catch (err) {
+    feedback.innerHTML = `<div class="ffmpeg-error">Failed to select profile — ${err}</div>`;
+  }
+}
+
+async function onAddFfmpegProfile() {
+  const nameEl = document.getElementById("ffmpeg-profile-name");
+  const argsEl = document.getElementById("ffmpeg-profile-args");
+  const feedback = document.getElementById("ffmpeg-add-profile-feedback");
+  feedback.textContent = "";
+
+  const name = (nameEl.value || "").trim();
+  const args = (argsEl.value || "").trim();
+  if (!name || !args) {
+    feedback.innerHTML = '<div class="ffmpeg-error">Name and args are required.</div>';
+    return;
+  }
+
+  try {
+    const res = await fetch("/api/ffmpeg/profiles", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, args }),
+    });
+    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+    nameEl.value = "";
+    argsEl.value = "";
+    await loadFfmpegProfiles();
+    feedback.innerHTML = `<div class="ffmpeg-success">Added profile: <strong>${escapeHtml(name)}</strong></div>`;
+  } catch (err) {
+    feedback.innerHTML = `<div class="ffmpeg-error">Failed to add profile — ${err}</div>`;
+  }
+}
+
+async function deleteFfmpegProfile(name) {
+  if (!confirm(`Delete profile "${name}"?`)) return;
+  const feedback = document.getElementById("ffmpeg-profiles-feedback");
+  feedback.textContent = "";
+  try {
+    const res = await fetch(`/api/ffmpeg/profiles/${encodeURIComponent(name)}`, { method: "DELETE" });
+    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+    await loadFfmpegProfiles();
+    feedback.innerHTML = `<div class="ffmpeg-success">Deleted profile: <strong>${escapeHtml(name)}</strong></div>`;
+  } catch (err) {
+    feedback.innerHTML = `<div class="ffmpeg-error">Failed to delete profile — ${err}</div>`;
+  }
+}
+
+function escapeHtml(str) {
+  return String(str)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+

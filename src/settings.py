@@ -1,12 +1,22 @@
 import os
 import json
 import shutil
+import shlex
 from fastapi import APIRouter, Request, Form, HTTPException, UploadFile, File
-from fastapi.responses import RedirectResponse, HTMLResponse
+from fastapi.responses import RedirectResponse, HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from .config import CONFIG_FILE_PATH, M3U_DIR, EPG_DIR, MODIFIED_EPG_DIR, DB_FILE, LOGOS_DIR, CUSTOM_LOGOS_DIR, TUNER_COUNT, config
 from .epg import parse_raw_epg_files, build_combined_epg, load_epg_color_mapping, save_epg_color_mapping, get_color_for_epg_file
 from .tasks import start_epg_reparse_task
+
+from .streaming import (
+    list_ffmpeg_profiles,
+    get_ffmpeg_profiles,
+    select_ffmpeg_profile,
+    register_ffmpeg_profile,
+    delete_ffmpeg_profile,
+    get_selected_ffmpeg_profile_name,
+)
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
@@ -210,4 +220,170 @@ def update_epg_color(filename: str = Form(...), color: str = Form(...)):
     mapping[filename] = color
     save_epg_color_mapping(mapping)
     return {"success": True, "message": "EPG file color updated."}
+
+
+@router.get("/api/ffmpeg/profiles", response_class=JSONResponse)
+def api_list_ffmpeg_profiles():
+    profiles = get_ffmpeg_profiles()
+    selected = get_selected_ffmpeg_profile_name()
+    return {"profiles": profiles, "selected": selected}
+
+
+@router.post("/api/ffmpeg/profiles/select", response_class=JSONResponse)
+async def api_select_ffmpeg_profile(request: Request):
+    try:
+        payload = await request.json()
+        name = (payload.get("name") or "").strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="Missing profile name")
+        # Validate and set selection in memory
+        select_ffmpeg_profile(name)
+        # Persist selection to config file
+        try:
+            try:
+                with open(CONFIG_FILE_PATH, "r") as f:
+                    current_config = json.load(f)
+            except Exception:
+                current_config = {}
+            current_config["FFMPEG_PROFILE"] = name
+            with open(CONFIG_FILE_PATH, "w") as f:
+                json.dump(current_config, f, indent=4)
+            # Update in-memory config
+            config["FFMPEG_PROFILE"] = name
+        except Exception as e:
+            # Revert selection if persistence failed
+            raise HTTPException(status_code=500, detail=f"Failed to persist selection: {e}")
+        return {"success": True, "selected": name}
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/api/ffmpeg/profiles", response_class=JSONResponse)
+async def api_add_ffmpeg_profile(request: Request):
+    try:
+        payload = await request.json()
+
+        name = (payload.get("name") or "").strip()
+        raw_args = payload.get("args")
+        if not name or raw_args in (None, ""):
+            raise HTTPException(status_code=400, detail="Name and args are required")
+
+        # Determine args list and args string for persistence
+        if isinstance(raw_args, list):
+            # Trust client-provided list of tokens
+            try:
+                args = [str(x) for x in raw_args]
+            except Exception:
+                raise HTTPException(status_code=400, detail="Args list must contain strings")
+            args_str = " ".join(args)
+        else:
+            # Treat as a single shell-like string
+            args_str = str(raw_args).strip()
+            if not args_str:
+                raise HTTPException(status_code=400, detail="Name and args are required")
+            try:
+                args = shlex.split(args_str)
+            except ValueError as e:
+                # shlex parsing error (e.g., unmatched quotes)
+                raise HTTPException(status_code=400, detail=f"Invalid args format: {e}")
+
+        # Heuristic: merge multi-token values for known single-value flags
+        # This helps when users forget to quote values with spaces (e.g., -user_agent Foo Bar)
+        SINGLE_VALUE_FLAGS = {"-user_agent"}
+        merged_args = []
+        i = 0
+        while i < len(args):
+            token = args[i]
+            if token in SINGLE_VALUE_FLAGS:
+                merged_args.append(token)
+                i += 1
+                # Collect subsequent tokens until the next flag-like token (starting with '-')
+                value_parts = []
+                while i < len(args) and not (isinstance(args[i], str) and args[i].startswith("-")):
+                    value_parts.append(args[i])
+                    i += 1
+                if not value_parts:
+                    # Missing value for single-value flag; keep behavior consistent with ffmpeg (will error later)
+                    pass
+                else:
+                    merged_args.append(" ".join(value_parts))
+                continue
+            else:
+                merged_args.append(token)
+                i += 1
+        args = merged_args
+
+        # Validate that the required placeholder token is present as its own argument
+        if "{input}" not in args:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Missing required {input} placeholder. Include {input} (e.g., -i {input})."
+                ),
+            )
+
+        # Register in memory
+        register_ffmpeg_profile(name, args)
+
+        # Persist to config file under FFMPEG_CUSTOM_PROFILES
+        try:
+            try:
+                with open(CONFIG_FILE_PATH, "r") as f:
+                    current_config = json.load(f)
+            except Exception:
+                current_config = {}
+            custom = current_config.get("FFMPEG_CUSTOM_PROFILES")
+            if not isinstance(custom, dict):
+                custom = {}
+            custom[name] = args_str
+            current_config["FFMPEG_CUSTOM_PROFILES"] = custom
+            with open(CONFIG_FILE_PATH, "w") as f:
+                json.dump(current_config, f, indent=4)
+            # Update in-memory config
+            config["FFMPEG_CUSTOM_PROFILES"] = custom
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to persist profile: {e}")
+        return {"success": True, "name": name}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.delete("/api/ffmpeg/profiles/{name}", response_class=JSONResponse)
+def api_delete_ffmpeg_profile(name: str):
+    if not name:
+        raise HTTPException(status_code=400, detail="Missing profile name")
+    ok = delete_ffmpeg_profile(name)
+    if not ok:
+        raise HTTPException(status_code=400, detail="Cannot delete this profile or it does not exist")
+    # Persist removal to config file and handle selection fallback
+    try:
+        try:
+            with open(CONFIG_FILE_PATH, "r") as f:
+                current_config = json.load(f)
+        except Exception:
+            current_config = {}
+        custom = current_config.get("FFMPEG_CUSTOM_PROFILES")
+        if isinstance(custom, dict) and name in custom:
+            del custom[name]
+            current_config["FFMPEG_CUSTOM_PROFILES"] = custom
+        # If selected was this profile, fall back to CPU
+        if current_config.get("FFMPEG_PROFILE") == name:
+            current_config["FFMPEG_PROFILE"] = "CPU"
+            config["FFMPEG_PROFILE"] = "CPU"
+        with open(CONFIG_FILE_PATH, "w") as f:
+            json.dump(current_config, f, indent=4)
+        # Update in-memory config as well
+        if isinstance(custom, dict):
+            config["FFMPEG_CUSTOM_PROFILES"] = custom
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to persist deletion: {e}")
+    return {"success": True, "name": name}
 
