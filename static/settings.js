@@ -3,24 +3,33 @@ let epgUploadingInProgress = false;
 let epgDeletingInProgress = false;
 let m3uUploadingInProgress = false;
 
-setTimeout(() => {
-  const conf = document.getElementById("confirmation-message");
-  if (conf) conf.style.display = "none";
-  const epgConf = document.getElementById("epg-upload-confirmation");
-  if (epgConf) epgConf.style.display = "none";
-  const m3uConf = document.getElementById("m3u-upload-confirmation");
-  if (m3uConf) m3uConf.style.display = "none";
-  const parseEpgConf = document.getElementById("parse-epg-confirmation");
-  if (parseEpgConf) parseEpgConf.style.display = "none";
-  const uploadEpgStatus = document.getElementById("upload-epg-status");
-  if (uploadEpgStatus) uploadEpgStatus.style.display = "none";
-  const deleteEpgStatus = document.getElementById("delete-epg-status");
-  if (deleteEpgStatus) deleteEpgStatus.style.display = "none";
-  const uploadM3UStatus = document.getElementById("upload-m3u-status");
-  if (uploadM3UStatus) uploadM3UStatus.style.display = "none";
-}, 5000);
-
 window.addEventListener("DOMContentLoaded", () => {
+  // Inject compact styles for the stream status table/actions
+  if (!document.getElementById("stream-status-styles")) {
+    const style = document.createElement("style");
+    style.id = "stream-status-styles";
+    style.textContent = `
+      .stream-status-table { width: 100%; border-collapse: collapse; }
+      .stream-status-table th, .stream-status-table td { border-bottom: 1px solid var(--bs-border-color, rgba(0,0,0,0.15)); padding: 6px 8px; text-align: left; vertical-align: top; }
+      .stream-status-table tr:hover { background: var(--bs-table-hover-bg, rgba(0,0,0,0.03)); }
+      .stream-status-table td:last-child { white-space: nowrap; }
+      .stream-status-table a { word-break: break-all; }
+      .stream-status-table .stop-stream-btn { 
+        display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+        padding: 4px 8px; font-size: 12px; line-height: 1.2; border-radius: var(--bs-border-radius, .375rem);
+        border: 1px solid var(--bs-danger, #dc3545); background: transparent; color: var(--bs-danger, #dc3545);
+        cursor: pointer; transition: background-color .15s ease, color .15s ease; 
+      }
+      .stream-status-table .stop-stream-btn:hover { background: color-mix(in srgb, var(--bs-danger, #dc3545) 10%, transparent); }
+      .stream-status-table .stop-stream-btn[disabled] { opacity: .6; cursor: not-allowed; }
+      @media (prefers-color-scheme: dark) {
+        .stream-status-table th, .stream-status-table td { border-bottom-color: var(--bs-border-color, #2b2b2b); }
+        .stream-status-table tr:hover { background: var(--bs-table-hover-bg, rgba(255,255,255,0.06)); }
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
   const urlParams = new URLSearchParams(window.location.search);
   if (
     urlParams.has("updated") ||
@@ -86,7 +95,7 @@ function updateStreamStatus() {
       if (Object.keys(data).length === 0) {
         container.innerHTML = "<p>No active streams.</p>";
       } else {
-        let html = "<table><thead><tr>";
+        let html = "<table class=\"stream-status-table\"><thead><tr>";
         html += "<th>Channel Number</th>";
         html += "<th>Channel Name</th>";
         html += "<th>Current Program</th>";
@@ -95,6 +104,8 @@ function updateStreamStatus() {
         html += "<th>Video Codec</th>";
         html += "<th>Resolution</th>";
         html += "<th>Audio Info</th>";
+        html += "<th>Actions</th>";
+
         html += "</tr></thead><tbody>";
 
         for (const channel in data) {
@@ -140,17 +151,69 @@ function updateStreamStatus() {
                     <td>${videoCodec}</td>
                     <td>${resolution}</td>
                     <td>${audioInfo}</td>
+                    <td><button class="stop-stream-btn" data-channel="${channel}" title="Stop this stream" aria-label="Stop stream for channel ${channel}">Stop</button></td>
                   </tr>`;
         }
 
         html += "</tbody></table>";
         container.innerHTML = html;
+
+        // Wire Stop buttons
+        container.querySelectorAll('.stop-stream-btn').forEach((btn) => {
+          btn.addEventListener('click', onStopStreamClick);
+        });
       }
     })
     .catch((error) => {
       document.getElementById("stream-status-content").innerHTML =
         "<p>Error fetching stream status: " + error + "</p>";
     });
+}
+
+async function stopStream(btn) {
+  if (!btn) return;
+  const channel = btn.getAttribute('data-channel');
+  if (!channel) return;
+
+  if (!confirm(`Stop stream for channel ${channel}?`)) return;
+
+  const originalText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Stopping...';
+
+  try {
+    const res = await fetch('/api/streams/stop', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ channel })
+    });
+    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+    // Attempt to parse JSON, but tolerate plain text
+    let payload = null;
+    try { payload = await res.json(); } catch (_) {}
+
+    // Refresh the stream status to reflect the stopped stream
+    updateStreamStatus();
+  } catch (err) {
+    alert('Failed to stop stream: ' + err);
+    btn.disabled = false;
+    btn.textContent = originalText;
+    return;
+  }
+
+  // Give a short delay before re-enabling in case the row persists
+  setTimeout(() => {
+    if (document.body.contains(btn)) {
+      btn.disabled = false;
+      btn.textContent = originalText;
+    }
+  }, 1500);
+}
+
+function onStopStreamClick(event) {
+  event.preventDefault();
+  const btn = event.currentTarget;
+  stopStream(btn);
 }
 
 function parseEPG() {
@@ -549,6 +612,12 @@ function renderFfmpegProfilesTable(data) {
   });
 }
 
+function onStopStreamClick(event) {
+  event.preventDefault();
+  const btn = event.currentTarget;
+  stopStream(btn);
+}
+
 async function selectFfmpegProfile(name) {
   const feedback = document.getElementById("ffmpeg-profiles-feedback");
   feedback.textContent = "";
@@ -682,3 +751,19 @@ function escapeHtml(str) {
     .replaceAll("'", "&#39;");
 }
 
+setTimeout(() => {
+  const conf = document.getElementById("confirmation-message");
+  if (conf) conf.style.display = "none";
+  const epgConf = document.getElementById("epg-upload-confirmation");
+  if (epgConf) epgConf.style.display = "none";
+  const m3uConf = document.getElementById("m3u-upload-confirmation");
+  if (m3uConf) m3uConf.style.display = "none";
+  const parseEpgConf = document.getElementById("parse-epg-confirmation");
+  if (parseEpgConf) parseEpgConf.style.display = "none";
+  const uploadEpgStatus = document.getElementById("upload-epg-status");
+  if (uploadEpgStatus) uploadEpgStatus.style.display = "none";
+  const deleteEpgStatus = document.getElementById("delete-epg-status");
+  if (deleteEpgStatus) deleteEpgStatus.style.display = "none";
+  const uploadM3UStatus = document.getElementById("upload-m3u-status");
+  if (uploadM3UStatus) uploadM3UStatus.style.display = "none";
+}, 5000);

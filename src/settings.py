@@ -2,6 +2,7 @@ import os
 import json
 import shutil
 import shlex
+import asyncio
 from fastapi import APIRouter, Request, Form, HTTPException, UploadFile, File
 from fastapi.responses import RedirectResponse, HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
@@ -486,3 +487,63 @@ async def api_update_ffmpeg_profile(name: str, request: Request):
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+@router.post("/api/streams/stop", response_class=JSONResponse)
+async def api_stop_stream(request: Request):
+    """
+    Stop a running stream for the given channel.
+    Expects JSON: { "channel": "<channel id or number>" }
+
+    This attempts to call a stopping function from the streaming module:
+    - stop_stream_by_channel(channel)
+    - stop_stream(channel)
+
+    The function may be synchronous or asynchronous.
+    """
+    try:
+        payload = await request.json()
+        channel = str((payload.get("channel") or "")).strip()
+        if not channel:
+            raise HTTPException(status_code=400, detail="Missing channel")
+
+        # Defer import to runtime to avoid circular imports
+        try:
+            from . import streaming as streaming_module
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Streaming module unavailable: {e}")
+
+        # Try known function names
+        stop_fn = getattr(streaming_module, "stop_stream_by_channel", None)
+        if stop_fn is None:
+            stop_fn = getattr(streaming_module, "stop_stream", None)
+
+        if stop_fn is None or not callable(stop_fn):
+            # Backend does not yet expose a stop function
+            return JSONResponse(status_code=501, content={
+                "success": False,
+                "message": "Stop operation not implemented on server. Please add stop_stream_by_channel(channel) or stop_stream(channel)."
+            })
+
+        # Support both sync and async implementations
+        ok = None
+        try:
+            if asyncio.iscoroutinefunction(stop_fn):
+                ok = await stop_fn(channel)
+            else:
+                ok = stop_fn(channel)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Error while stopping stream: {e}")
+
+        # Interpret return value; treat None as success if no exception
+        if ok is False:
+            return JSONResponse(status_code=404, content={
+                "success": False,
+                "message": "Stream not found or already stopped",
+                "channel": channel
+            })
+
+        return {"success": True, "channel": channel}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))

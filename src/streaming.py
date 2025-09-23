@@ -236,16 +236,47 @@ def get_shared_stream(channel_id: int, stream_url: str) -> SharedStream:
         shared_streams[channel_id] = SharedStream(channel_id, ffmpeg_cmd)
         return shared_streams[channel_id]
 
-def clear_shared_stream(channel_id: int):
+def clear_shared_stream(channel_id: int) -> bool:
     """
     Kill and remove the shared stream for a given channel id (if one exists).
+    Returns True if a running stream was found and cleared, otherwise False.
     """
     with streams_lock:
-        if channel_id in shared_streams:
-            print(f"[Stream] Clearing channel {channel_id}", flush=True)
+        stream = shared_streams.get(channel_id)
+        if not stream:
+            return False
+        print(f"[Stream] Clearing channel {channel_id}", flush=True)
+        try:
+            # Mark an explicit reason for diagnostics before kill
             try:
-                shared_streams[channel_id].process.kill()
+                stream.end_reason = "stopped by user"
             except Exception:
                 pass
+            stream.process.kill()
+        except Exception:
+            pass
+        # Remove from registry regardless of kill outcome
+        try:
             del shared_streams[channel_id]
+        except Exception:
+            pass
+        return True
 
+
+def stop_stream_by_channel(channel) -> bool:
+    """
+    Stop a stream by channel identifier provided as string or int.
+    Returns True if a stream was found and stopped, False otherwise.
+    """
+    try:
+        cid = int(channel)
+    except Exception:
+        return False
+    return clear_shared_stream(cid)
+
+
+def stop_stream(channel) -> bool:
+    """
+    Alias to stop_stream_by_channel for compatibility.
+    """
+    return stop_stream_by_channel(channel)
