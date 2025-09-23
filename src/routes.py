@@ -17,6 +17,10 @@ from .epg import (
 )
 from .streaming import get_shared_stream, clear_shared_stream
 from fastapi.templating import Jinja2Templates
+import logging
+logger = logging.getLogger(__name__)
+# Silence Uvicorn access logs ("GET /... 200" / "404 Not Found" lines)
+logging.getLogger("uvicorn.access").disabled = True
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")

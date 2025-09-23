@@ -3,6 +3,7 @@ import threading
 import queue
 from .config import config  # access runtime ffmpeg/gpu decisions
 import sqlite3
+import shlex
 
 # --- FFmpeg profile management ---
 # We keep a registry of named profiles. Each profile is a list of argument tokens
@@ -106,7 +107,7 @@ def _ensure_builtin_profiles_registered() -> None:
         for pname, pargs in custom_profiles.items():
             if isinstance(pargs, str):
                 try:
-                    register_ffmpeg_profile(pname, pargs.split())
+                    register_ffmpeg_profile(pname, shlex.split(pargs))
                 except Exception as e:
                     print(f"[FFmpeg] Skipping invalid custom profile '{pname}': {e}")
 
@@ -137,9 +138,15 @@ def build_ffmpeg_command(stream_url: str) -> list[str]:
     if profile_name.upper() == "CUSTOM":
         extra = config.get("FFMPEG_CUSTOM_ARGS")
         if isinstance(extra, str) and extra.strip():
-            final_args.extend(extra.split())
+            final_args.extend(shlex.split(extra))
 
-    return ["ffmpeg"] + final_args
+    cmd = ["ffmpeg"] + final_args
+
+    # Print the final command unconditionally for easier diagnostics
+    quoted = " ".join(shlex.quote(t) for t in cmd)
+    print("[FFmpeg] Command:", quoted, flush=True)
+
+    return cmd
 
 streams_lock = threading.Lock()
 shared_streams = {}
@@ -148,6 +155,7 @@ class SharedStream:
     def __init__(self, channel_id, ffmpeg_cmd):
         self.channel_id = channel_id
         self.ffmpeg_cmd = ffmpeg_cmd
+        print(f"[Stream] Starting channel {channel_id}", flush=True)
         self.process = subprocess.Popen(
             ffmpeg_cmd,
             stdout=subprocess.PIPE,
@@ -157,15 +165,17 @@ class SharedStream:
         self.subscribers = []
         self.lock = threading.Lock()
         self.is_running = True
+        self.end_reason = None
         self.broadcast_thread = threading.Thread(target=self._broadcast)
         self.broadcast_thread.daemon = True
         self.broadcast_thread.start()
 
     def _broadcast(self):
+        end_cause = None
         while True:
             chunk = self.process.stdout.read(1024)
             if not chunk:
-                print(f"Stream for channel {self.channel_id} ended.")
+                end_cause = "eof"
                 break
             with self.lock:
                 for q in self.subscribers:
@@ -174,9 +184,30 @@ class SharedStream:
         with self.lock:
             for q in self.subscribers:
                 q.put(None)
-        stderr_output = self.process.stderr.read()
+        # Gather process exit code and stderr for diagnostics
+        rc = None
+        try:
+            rc = self.process.wait(timeout=1)
+        except Exception:
+            rc = self.process.poll()
+
+        stderr_output = b""
+        try:
+            stderr_output = self.process.stderr.read() or b""
+        except Exception:
+            pass
+
+        # Determine reason: explicit end_reason set elsewhere, or EOF, otherwise unknown
+        reason = self.end_reason or ("eof" if end_cause == "eof" else "unknown")
+        print(f"[Stream] Channel {self.channel_id} ended (reason: {reason}, exit_code: {rc})", flush=True)
+
         if stderr_output:
-            print("FFmpeg stderr:", stderr_output.decode("utf-8", errors="ignore"))
+            stderr_text = stderr_output.decode("utf-8", errors="ignore")
+            lines = [ln for ln in stderr_text.strip().splitlines() if ln.strip()]
+            tail_count = min(10, len(lines))
+            if tail_count > 0:
+                tail = "\n".join(lines[-tail_count:])
+                print(f"[FFmpeg stderr][channel {self.channel_id}] last {tail_count} lines:\n{tail}", flush=True)
 
     def add_subscriber(self):
         q = queue.Queue()
@@ -189,6 +220,7 @@ class SharedStream:
             if q in self.subscribers:
                 self.subscribers.remove(q)
             if not self.subscribers:
+                self.end_reason = "no subscribers"
                 try:
                     self.process.kill()
                 except Exception:
@@ -210,6 +242,7 @@ def clear_shared_stream(channel_id: int):
     """
     with streams_lock:
         if channel_id in shared_streams:
+            print(f"[Stream] Clearing channel {channel_id}", flush=True)
             try:
                 shared_streams[channel_id].process.kill()
             except Exception:
