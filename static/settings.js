@@ -420,6 +420,21 @@ function initFfmpegProfilesUI() {
           <h3 style="margin-top:0">Available Profiles</h3>
           <div id="ffmpeg-profiles-table"></div>
         </section>
+        <section id="ffmpeg-edit-profile" class="ffmpeg-edit-profile" style="display:none; margin-top: 16px;">
+          <h3 style="margin-top:0">Edit Profile</h3>
+          <div class="ffmpeg-form">
+            <label for="ffmpeg-edit-name">Name</label>
+            <input id="ffmpeg-edit-name" type="text" readonly />
+            <label for="ffmpeg-edit-args">Args</label>
+            <textarea id="ffmpeg-edit-args" rows="8" style="resize: vertical;"></textarea>
+            <div class="hint">Edit the full args string. Include {input} where the URL should go. Do not include the initial 'ffmpeg' token.</div>
+            <div style="grid-column: 1 / -1; display: flex; gap: 8px;">
+              <button id="ffmpeg-edit-save">Save Changes</button>
+              <button type="button" id="ffmpeg-edit-cancel">Cancel</button>
+            </div>
+          </div>
+          <div id="ffmpeg-edit-profile-feedback"></div>
+        </section>
         <section class="ffmpeg-add-profile">
           <h3>Add Custom Profile</h3>
           <div class="ffmpeg-form">
@@ -442,6 +457,11 @@ function initFfmpegProfilesUI() {
 
     modal.querySelector(".close").addEventListener("click", closeFfmpegProfilesModal);
     document.getElementById("ffmpeg-add-profile-btn").addEventListener("click", onAddFfmpegProfile);
+
+    const editSaveBtn = document.getElementById("ffmpeg-edit-save");
+    const editCancelBtn = document.getElementById("ffmpeg-edit-cancel");
+    if (editSaveBtn) editSaveBtn.addEventListener("click", saveEditProfile);
+    if (editCancelBtn) editCancelBtn.addEventListener("click", closeEditProfile);
   }
 }
 
@@ -496,13 +516,14 @@ function renderFfmpegProfilesTable(data) {
 
   for (const p of profiles) {
     const name = p.name || "(unnamed)";
-    const args = Array.isArray(p.args) ? p.args.join(" ") : (p.args || "");
+    const argsStr = (typeof p.args_str === "string") ? p.args_str : (Array.isArray(p.args) ? p.args.join(" ") : (p.args || ""));
     const isSelected = name === selected;
     html += `<tr>
       <td>${name}${isSelected ? '<span class="ffmpeg-badge">Selected</span>' : ''}</td>
-      <td><code>${escapeHtml(args)}</code></td>
+      <td><code>${escapeHtml(argsStr)}</code></td>
       <td class="ffmpeg-actions">
         <button data-action="select" data-name="${encodeURIComponent(name)}" ${isSelected ? 'disabled' : ''}>Select</button>
+        <button data-action="edit" data-name="${encodeURIComponent(name)}" data-args="${encodeURIComponent(argsStr)}" ${name === 'CPU' || name === 'CUDA' ? 'disabled' : ''}>Edit</button>
         <button data-action="delete" data-name="${encodeURIComponent(name)}" ${name === 'CPU' || name === 'CUDA' ? 'disabled' : ''}>Delete</button>
       </td>
     </tr>`;
@@ -518,6 +539,13 @@ function renderFfmpegProfilesTable(data) {
     const name = rawName ? decodeURIComponent(rawName) : "";
     if (action === "select") btn.addEventListener("click", () => selectFfmpegProfile(name));
     if (action === "delete") btn.addEventListener("click", () => deleteFfmpegProfile(name));
+    if (action === "edit") {
+      btn.addEventListener("click", () => {
+        const raw = btn.getAttribute("data-args") || "";
+        const currentArgs = decodeURIComponent(raw);
+        editFfmpegProfile(name, currentArgs);
+      });
+    }
   });
 }
 
@@ -578,6 +606,70 @@ async function deleteFfmpegProfile(name) {
     feedback.innerHTML = `<div class="ffmpeg-success">Deleted profile: <strong>${escapeHtml(name)}</strong></div>`;
   } catch (err) {
     feedback.innerHTML = `<div class="ffmpeg-error">Failed to delete profile — ${err}</div>`;
+  }
+}
+
+async function editFfmpegProfile(name, currentArgs) {
+  openEditProfile(name, currentArgs);
+}
+
+function openEditProfile(name, argsStr) {
+  const section = document.getElementById("ffmpeg-edit-profile");
+  const nameEl = document.getElementById("ffmpeg-edit-name");
+  const argsEl = document.getElementById("ffmpeg-edit-args");
+  const feedback = document.getElementById("ffmpeg-edit-profile-feedback");
+  if (!section || !nameEl || !argsEl) return;
+  nameEl.value = name || "";
+  argsEl.value = argsStr || "";
+  if (feedback) feedback.textContent = "";
+  section.style.display = "block";
+  argsEl.focus();
+}
+
+function closeEditProfile() {
+  const section = document.getElementById("ffmpeg-edit-profile");
+  const nameEl = document.getElementById("ffmpeg-edit-name");
+  const argsEl = document.getElementById("ffmpeg-edit-args");
+  const feedback = document.getElementById("ffmpeg-edit-profile-feedback");
+  if (section) section.style.display = "none";
+  if (nameEl) nameEl.value = "";
+  if (argsEl) argsEl.value = "";
+  if (feedback) feedback.textContent = "";
+}
+
+async function saveEditProfile(event) {
+  if (event && event.preventDefault) event.preventDefault();
+  const nameEl = document.getElementById("ffmpeg-edit-name");
+  const argsEl = document.getElementById("ffmpeg-edit-args");
+  const feedback = document.getElementById("ffmpeg-edit-profile-feedback");
+  const listFeedback = document.getElementById("ffmpeg-profiles-feedback");
+  const name = (nameEl && nameEl.value) || "";
+  const args = (argsEl && argsEl.value) || "";
+  if (!name) {
+    if (feedback) feedback.innerHTML = '<div class="ffmpeg-error">Missing profile name.</div>';
+    return;
+  }
+  const trimmed = args.trim();
+  if (!trimmed) {
+    if (feedback) feedback.innerHTML = '<div class="ffmpeg-error">Args cannot be empty.</div>';
+    return;
+  }
+  try {
+    const res = await fetch(`/api/ffmpeg/profiles/${encodeURIComponent(name)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ args: trimmed })
+    });
+    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+    await loadFfmpegProfiles();
+    closeEditProfile();
+    if (listFeedback) listFeedback.innerHTML = `<div class="ffmpeg-success">Updated profile: <strong>${escapeHtml(name)}</strong></div>`;
+  } catch (err) {
+    if (feedback) {
+      feedback.innerHTML = `<div class=\"ffmpeg-error\">Failed to update profile — ${err}</div>`;
+    } else {
+      alert("Failed to update profile: " + err);
+    }
   }
 }
 

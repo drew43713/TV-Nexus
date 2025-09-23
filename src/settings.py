@@ -226,7 +226,37 @@ def update_epg_color(filename: str = Form(...), color: str = Form(...)):
 def api_list_ffmpeg_profiles():
     profiles = get_ffmpeg_profiles()
     selected = get_selected_ffmpeg_profile_name()
-    return {"profiles": profiles, "selected": selected}
+
+    # Load persisted custom args strings to preserve original quoting
+    try:
+        with open(CONFIG_FILE_PATH, "r") as f:
+            current_config = json.load(f)
+    except Exception:
+        current_config = {}
+    custom_map = current_config.get("FFMPEG_CUSTOM_PROFILES")
+    if not isinstance(custom_map, dict):
+        custom_map = {}
+
+    enriched = []
+    for p in profiles:
+        name = p.get("name") or ""
+        args = p.get("args") or []
+        # Prefer the exact string from config for custom profiles; otherwise quote tokens
+        if name in custom_map and isinstance(custom_map[name], str) and custom_map[name].strip():
+            args_str = custom_map[name]
+        else:
+            try:
+                args_str = " ".join(shlex.quote(str(t)) for t in args)
+            except Exception:
+                # Fallback to naive join if quoting fails
+                args_str = " ".join(str(t) for t in args)
+        enriched.append({
+            "name": name,
+            "args": args,
+            "args_str": args_str
+        })
+
+    return {"profiles": enriched, "selected": selected}
 
 
 @router.post("/api/ffmpeg/profiles/select", response_class=JSONResponse)
@@ -386,4 +416,73 @@ def api_delete_ffmpeg_profile(name: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to persist deletion: {e}")
     return {"success": True, "name": name}
+
+@router.put("/api/ffmpeg/profiles/{name}", response_class=JSONResponse)
+async def api_update_ffmpeg_profile(name: str, request: Request):
+    """
+    Update an existing custom FFmpeg profile's args.
+    - Protect built-in profiles (CPU, CUDA) from modification.
+    - Accepts either a JSON string `args` or a JSON array of tokens.
+    - Validates that `{input}` placeholder is present as its own token.
+    - Uses shlex.split for string parsing (quote-aware).
+    - Persists to CONFIG_FILE_PATH under FFMPEG_CUSTOM_PROFILES and updates in-memory state.
+    """
+    try:
+        if not name:
+            raise HTTPException(status_code=400, detail="Missing profile name")
+        if name in ("CPU", "CUDA"):
+            raise HTTPException(status_code=400, detail="Cannot edit built-in profile")
+
+        payload = await request.json()
+        raw_args = payload.get("args")
+        if raw_args in (None, ""):
+            raise HTTPException(status_code=400, detail="Args are required")
+
+        # Parse args
+        if isinstance(raw_args, list):
+            try:
+                args = [str(x) for x in raw_args]
+            except Exception:
+                raise HTTPException(status_code=400, detail="Args list must contain strings")
+            args_str = " ".join(args)
+        else:
+            args_str = str(raw_args).strip()
+            if not args_str:
+                raise HTTPException(status_code=400, detail="Args are required")
+            try:
+                args = shlex.split(args_str)
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=f"Invalid args format: {e}")
+
+        # Validate placeholder
+        if "{input}" not in args:
+            raise HTTPException(status_code=400, detail="Missing required {input} placeholder. Include {input} (e.g., -i {input}).")
+
+        # Register/overwrite in memory
+        register_ffmpeg_profile(name, args)
+
+        # Persist to config file
+        try:
+            try:
+                with open(CONFIG_FILE_PATH, "r") as f:
+                    current_config = json.load(f)
+            except Exception:
+                current_config = {}
+            custom = current_config.get("FFMPEG_CUSTOM_PROFILES")
+            if not isinstance(custom, dict):
+                custom = {}
+            custom[name] = args_str
+            current_config["FFMPEG_CUSTOM_PROFILES"] = custom
+            with open(CONFIG_FILE_PATH, "w") as f:
+                json.dump(current_config, f, indent=4)
+            # Update in-memory config
+            config["FFMPEG_CUSTOM_PROFILES"] = custom
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to persist profile: {e}")
+
+        return {"success": True, "name": name}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
