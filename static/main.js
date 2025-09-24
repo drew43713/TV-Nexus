@@ -142,6 +142,305 @@ document.addEventListener("DOMContentLoaded", function () {
   initEPGSearchWithColors();
 });
 
+// New helper that builds a custom colored dropdown for the EPG Source File select
+function initColoredRawFileDropdown(selectEl, filenames, colorMap) {
+  if (!selectEl) return;
+
+  // If we've already initialized, just refresh items and re-apply theme
+  if (selectEl._coloredDropdown) {
+    selectEl._coloredDropdown.refresh(filenames, colorMap);
+    return;
+  }
+
+  // Hide the native select but retain it for value/compat
+  selectEl.style.position = 'absolute';
+  selectEl.style.opacity = '0';
+  selectEl.style.pointerEvents = 'none';
+  selectEl.style.width = '0';
+  selectEl.style.height = '0';
+
+  // Create wrapper and button
+  const wrapper = document.createElement('div');
+  wrapper.className = 'raw-file-colored-dropdown';
+  wrapper.style.display = 'inline-block';
+  wrapper.style.position = 'relative';
+  wrapper.style.minWidth = '180px';
+
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.style.display = 'inline-flex';
+  button.style.alignItems = 'center';
+  button.style.gap = '8px';
+  button.style.padding = '6px 10px';
+  button.style.borderRadius = '6px';
+  button.style.border = '1px solid rgba(255,255,255,0.25)';
+  button.style.background = '#1c1c1e';
+  button.style.font = '14px system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif';
+  button.style.cursor = 'pointer';
+  button.style.color = '#f2f2f7';
+
+  const dot = document.createElement('span');
+  dot.style.display = 'inline-block';
+  dot.style.width = '10px';
+  dot.style.height = '10px';
+  dot.style.borderRadius = '50%';
+  dot.style.border = '1px solid rgba(255,255,255,0.25)';
+
+  const label = document.createElement('span');
+  label.textContent = 'All Files';
+
+  const caret = document.createElement('span');
+  caret.textContent = '▾';
+  caret.style.marginLeft = '6px';
+  caret.style.opacity = '0.7';
+  caret.style.color = '#f2f2f7';
+
+  button.appendChild(dot);
+  button.appendChild(label);
+  button.appendChild(caret);
+
+  const list = document.createElement('div');
+  list.style.position = 'absolute';
+  list.style.top = 'calc(100% + 4px)';
+  list.style.left = '0';
+  // Baseline z-index; will be raised while open so it overlays EPG suggestions
+  list.style.zIndex = '1000';
+  list.style.minWidth = '220px';
+  list.style.maxHeight = '280px';
+  list.style.overflow = 'auto';
+  list.style.background = '#1c1c1e';
+  list.style.border = '1px solid rgba(255,255,255,0.25)';
+  list.style.borderRadius = '8px';
+  list.style.boxShadow = '0 12px 28px rgba(0,0,0,0.6)';
+  list.style.padding = '6px';
+  list.style.display = 'none';
+
+  wrapper.appendChild(button);
+  wrapper.appendChild(list);
+  // Insert wrapper right after the select
+  selectEl.insertAdjacentElement('afterend', wrapper);
+
+  function closeList() { 
+    list.style.display = 'none'; 
+    // Restore baseline z-index when closed
+    list.style.zIndex = '1000';
+  }
+  function openList() { 
+    list.style.display = 'block'; 
+    // Raise z-index while open to appear above EPG suggestions
+    list.style.zIndex = '5000';
+  }
+  function toggleList() { 
+    const willOpen = (list.style.display === 'none' || !list.style.display);
+    if (willOpen) {
+      openList();
+    } else {
+      closeList();
+    }
+  }
+
+  function updateButtonFromValue() {
+    const val = selectEl.value;
+    if (!val) {
+      label.textContent = 'All Files';
+      dot.style.background = 'transparent';
+      dot.style.borderColor = 'rgba(255,255,255,0.25)';
+      return;
+    }
+    label.textContent = val;
+    const c = colorMap[val];
+    if (c) {
+      dot.style.background = c;
+      dot.style.borderColor = 'rgba(255,255,255,0.25)';
+    } else {
+      dot.style.background = 'transparent';
+      dot.style.borderColor = 'rgba(255,255,255,0.25)';
+    }
+  }
+
+  function renderItems(names, cmap) {
+    list.innerHTML = '';
+
+    // All Files option
+    const any = document.createElement('div');
+    any.style.display = 'flex';
+    any.style.alignItems = 'center';
+    any.style.gap = '8px';
+    any.style.padding = '8px';
+    any.style.borderRadius = '6px';
+    any.style.cursor = 'pointer';
+    any.style.color = '#f2f2f7';
+    any.addEventListener('mouseenter', () => { any.style.background = 'rgba(255,255,255,0.08)'; });
+    any.addEventListener('mouseleave', () => { any.style.background = 'transparent'; });
+
+    const anyDot = document.createElement('span');
+    anyDot.style.display = 'inline-block';
+    anyDot.style.width = '10px';
+    anyDot.style.height = '10px';
+    anyDot.style.borderRadius = '50%';
+    anyDot.style.border = '1px solid rgba(255,255,255,0.25)';
+    anyDot.style.background = 'transparent';
+
+    const anyLabel = document.createElement('span');
+    anyLabel.textContent = 'All Files';
+    anyLabel.style.color = '#f2f2f7';
+
+    any.appendChild(anyDot);
+    any.appendChild(anyLabel);
+    any.addEventListener('click', () => {
+      selectEl.value = '';
+      selectEl.dispatchEvent(new Event('change', { bubbles: true }));
+      updateButtonFromValue();
+      closeList();
+    });
+    list.appendChild(any);
+
+    names.forEach(fn => {
+      const row = document.createElement('div');
+      row.style.display = 'flex';
+      row.style.alignItems = 'center';
+      row.style.gap = '8px';
+      row.style.padding = '8px';
+      row.style.borderRadius = '6px';
+      row.style.cursor = 'pointer';
+      row.style.color = '#f2f2f7';
+      row.addEventListener('mouseenter', () => { row.style.background = 'rgba(255,255,255,0.08)'; });
+      row.addEventListener('mouseleave', () => { row.style.background = 'transparent'; });
+
+      const sw = document.createElement('span');
+      sw.style.display = 'inline-block';
+      sw.style.width = '10px';
+      sw.style.height = '10px';
+      sw.style.borderRadius = '50%';
+      sw.style.border = '1px solid rgba(255,255,255,0.25)';
+      const col = cmap[fn];
+      sw.style.background = col || 'transparent';
+
+      const text = document.createElement('span');
+      text.textContent = fn;
+      text.style.color = '#f2f2f7';
+
+      row.appendChild(sw);
+      row.appendChild(text);
+      row.addEventListener('click', () => {
+        selectEl.value = fn;
+        selectEl.dispatchEvent(new Event('change', { bubbles: true }));
+        updateButtonFromValue();
+        closeList();
+      });
+      list.appendChild(row);
+    });
+  }
+
+  // Wire button
+  button.addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleList();
+  });
+
+  // Close on outside click and Esc
+  document.addEventListener('click', (e) => {
+    if (!wrapper.contains(e.target)) closeList();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeList();
+  });
+
+  // Initial render
+  renderItems(filenames, colorMap);
+  updateButtonFromValue();
+
+  // Expose a refresh hook for subsequent calls
+  selectEl._coloredDropdown = {
+    refresh: (names, cmap) => {
+      renderItems(names, cmap);
+      updateButtonFromValue();
+    }
+  };
+}
+
+function loadRawFileOptions() {
+  const select = document.getElementById("raw-file-filter");
+  if (!select) return;
+
+  fetch("/api/epg_filenames")
+    .then(response => response.json())
+    .then(async (filenames) => {
+      if (!Array.isArray(filenames)) filenames = [];
+
+      // Fetch color map if available
+      let colorMap = {};
+      try {
+        const resp = await fetch('/api/epg_file_colors', { cache: 'no-store' });
+        if (resp.ok) {
+          const data = await resp.json();
+          if (data && typeof data === 'object') {
+            colorMap = data;
+          }
+        }
+      } catch (_) {}
+
+      // If no colors known, attempt to infer a color per file using a single sample entry
+      const filesNeedingColor = filenames.filter(fn => !colorMap[fn]);
+      if (filesNeedingColor.length > 0) {
+        try {
+          const fetchOne = async (fn) => {
+            const url = `/api/epg_entries?raw_file=${encodeURIComponent(fn)}&limit=1`;
+            try {
+              const r = await fetch(url, { cache: 'no-store' });
+              if (!r.ok) return;
+              const arr = await r.json();
+              if (Array.isArray(arr) && arr.length > 0) {
+                const c = arr[0] && arr[0].color;
+                if (c) colorMap[fn] = c;
+              }
+            } catch (_) {}
+          };
+          const concurrency = 5;
+          let i = 0;
+          async function runBatch() {
+            const batch = filesNeedingColor.slice(i, i + concurrency);
+            i += concurrency;
+            await Promise.all(batch.map(fetchOne));
+            if (i < filesNeedingColor.length) return runBatch();
+          }
+          await runBatch();
+        } catch (_) {}
+      }
+
+      // Remember previous selection
+      const previousValue = select.value;
+      // Populate options (colorize each option)
+      select.innerHTML = '<option value="">All Files</option>';
+      filenames.forEach(fn => {
+        const option = document.createElement('option');
+        option.value = fn;
+        option.textContent = fn;
+        const color = colorMap[fn];
+        if (color) {
+          option.dataset.color = color;
+          option.style.background = color; // some browsers show this in the dropdown list
+          option.style.color = getContrastingTextColor(color);
+        }
+        select.appendChild(option);
+      });
+
+      // Restore previous selection if still available
+      if (previousValue && Array.from(select.options).some(o => o.value === previousValue)) {
+        select.value = previousValue;
+      }
+
+      // Ensure we do not style the select element itself
+      applyRawFileSelectColor(select);
+
+      // Initialize/update the custom colored dropdown UI
+      initColoredRawFileDropdown(select, filenames, colorMap);
+
+      // If a previous change listener was attached, leaving it is harmless; no need to add a new one
+    })
+    .catch(error => console.error('Error fetching raw file list:', error));
+}
+
 function updateActiveStatus(checkbox, channelId) {
   const active = checkbox.checked;
   const row = document.querySelector(`tr[data-channel="${channelId}"]`);
@@ -357,6 +656,84 @@ function getChannelIdsFromUI() {
   return ids.join(",");
 }
 
+// Helper function to parse color strings to RGB
+function parseColorToRGB(colorStr) {
+  if (!colorStr) return null;
+  colorStr = String(colorStr).trim();
+  // Hex formats: #RGB, #RRGGBB
+  if (colorStr[0] === '#') {
+    let hex = colorStr.slice(1);
+    if (hex.length === 3) {
+      hex = hex.split('').map(ch => ch + ch).join('');
+    }
+    if (hex.length === 6) {
+      const r = parseInt(hex.slice(0, 2), 16);
+      const g = parseInt(hex.slice(2, 4), 16);
+      const b = parseInt(hex.slice(4, 6), 16);
+      if ([r, g, b].every(n => Number.isFinite(n))) return { r, g, b };
+    }
+    return null;
+  }
+  // rgb/rgba formats
+  const m = colorStr.match(/^rgba?\(([^)]+)\)$/i);
+  if (m) {
+    const parts = m[1].split(',').map(s => s.trim());
+    if (parts.length >= 3) {
+      const r = parseFloat(parts[0]);
+      const g = parseFloat(parts[1]);
+      const b = parseFloat(parts[2]);
+      if ([r, g, b].every(n => Number.isFinite(n))) return { r, g, b };
+    }
+  }
+  return null;
+}
+
+// Helper function to get contrasting text color for a background
+function getContrastingTextColor(bg) {
+  const rgb = parseColorToRGB(bg);
+  if (!rgb) return '#111';
+  // Relative luminance (sRGB)
+  const srgb = ['r', 'g', 'b'].map(k => {
+    let v = rgb[k] / 255;
+    return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+  });
+  const L = 0.2126 * srgb[0] + 0.7152 * srgb[1] + 0.0722 * srgb[2];
+  return L > 0.55 ? '#111' : '#fff';
+}
+
+// Normalize various server error shapes into a readable string
+function extractErrorMessage(errBody) {
+  if (!errBody) return 'Unknown error';
+  const d = errBody.detail ?? errBody.error ?? errBody.message ?? errBody.msg ?? errBody;
+
+  if (typeof d === 'string') return d;
+
+  if (Array.isArray(d)) {
+    return d.map(item => {
+      if (typeof item === 'string') return item;
+      if (item && typeof item === 'object') {
+        return item.message || item.detail || JSON.stringify(item);
+      }
+      return String(item);
+    }).join('\n');
+  }
+
+  if (typeof d === 'object') {
+    if (d.message || d.detail) return d.message || d.detail;
+    try { return JSON.stringify(d); } catch (_) { return String(d); }
+  }
+
+  return String(d);
+}
+
+// Helper to apply selected option's color to the select element itself
+function applyRawFileSelectColor(selectEl) {
+  if (!selectEl) return;
+  // Do not style the select itself; show colors only inside the dropdown options
+  selectEl.style.background = '';
+  selectEl.style.color = '';
+}
+
 function autoNumberChannels() {
   const startNumber = document.getElementById("start_number").value;
   const channelIds = getChannelIdsFromUI();
@@ -386,22 +763,6 @@ function autoNumberChannels() {
     .catch(error => {
       alert("Request failed: " + error);
     });
-}
-
-function loadRawFileOptions() {
-  fetch("/api/epg_filenames")
-    .then(response => response.json())
-    .then(filenames => {
-      const select = document.getElementById("raw-file-filter");
-      select.innerHTML = '<option value="">All Files</option>';
-      filenames.forEach(fn => {
-        const option = document.createElement("option");
-        option.value = fn;
-        option.textContent = fn;
-        select.appendChild(option);
-      });
-    })
-    .catch(error => console.error("Error fetching raw file list:", error));
 }
 
 function initEPGSearchWithColors() {
@@ -613,8 +974,24 @@ function saveChannelCategoryInline() {
 function updateModalChannelNumber(input) {}
 
 function updateChannelNumber(input) {
+  // Guard: only handle text inputs that represent channel numbers
+  if (!input || input.tagName !== 'INPUT' || (input.type && input.type.toLowerCase() !== 'text')) {
+    return Promise.resolve(false);
+  }
+  if (!input.hasAttribute('data-old-value')) {
+    return Promise.resolve(false);
+  }
+
   let oldValue = input.getAttribute("data-old-value");
   let newValue = input.value.trim();
+
+  // Guard: new value must be an integer-like string
+  if (!/^[-]?\d+$/.test(newValue)) {
+    // Revert UI silently if the blur came from a non-numeric edit
+    input.value = input.getAttribute('data-old-value') || '';
+    return Promise.resolve(false);
+  }
+
   if (oldValue === newValue || newValue === "") {
     input.value = oldValue;
     return Promise.resolve(false);
@@ -626,7 +1003,7 @@ function updateChannelNumber(input) {
     .then(response => {
       if (!response.ok) {
         return response.json().then(errBody => {
-          throw new Error(errBody.detail || "Unknown error");
+          throw new Error(extractErrorMessage(errBody));
         });
       }
       // Update the data-old-value so subsequent edits compare against the new value
@@ -839,7 +1216,7 @@ document.addEventListener("DOMContentLoaded", function () {
   // Commit inline edits when pressing Enter inside inputs in the table
   table.addEventListener("keydown", function(e) {
     const target = e.target;
-    if (e.key === "Enter" && target && target.tagName === "INPUT") {
+    if (e.key === "Enter" && target && target.tagName === "INPUT" && (target.type || '').toLowerCase() === 'text' && target.hasAttribute('data-old-value')) {
       e.preventDefault();
       const inputEl = target;
       const row = inputEl.closest('tr');
@@ -862,7 +1239,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
   table.addEventListener("focusout", function(e) {
     const target = e.target;
-    if (target && target.tagName === "INPUT") {
+    if (target && target.tagName === "INPUT" && (target.type || '').toLowerCase() === 'text' && target.hasAttribute('data-old-value')) {
       // If Enter just triggered a save, skip saving again on blur
       if (target.dataset.justSaved === '1') return;
       // Fire and forget; no reload on blur
@@ -928,7 +1305,7 @@ function apiUpdateChannelNumber(currentId, newId) {
     .then(response => {
       if (!response.ok) {
         return response.json().then(errBody => {
-          throw new Error(errBody.detail || 'Unknown error');
+          throw new Error(extractErrorMessage(errBody));
         });
       }
       return true;
