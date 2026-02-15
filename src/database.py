@@ -1,11 +1,12 @@
 import sqlite3
 import logging
 
-logger = logging.getLogger(__name__)
 from fastapi import HTTPException
 
-logger = logging.getLogger(__name__)
 from .config import DB_FILE
+from .db import get_conn
+
+logger = logging.getLogger(__name__)
 
 def init_db():
     """
@@ -15,7 +16,7 @@ def init_db():
       - Creates/updates the 'raw_epg_channels' and 'raw_epg_programs' tables,
         including the new 'raw_epg_file' column in both raw_epg_channels and raw_epg_programs.
     """
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_conn(DB_FILE)
     c = conn.cursor()
 
     # Create channels table if it does not exist.
@@ -136,7 +137,7 @@ def swap_channel_numbers(current_number: int, new_number: int) -> bool:
     Otherwise, simply update the record.
     Returns True if a swap occurred.
     """
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_conn(DB_FILE)
     c = conn.cursor()
 
     # Confirm channel with current_number exists.

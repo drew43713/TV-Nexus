@@ -25,7 +25,7 @@ def stream_status():
     # Build a dictionary mapping channel numbers (as strings) to channel names.
     channel_names = {}
     try:
-        conn = sqlite3.connect(DB_FILE)
+        conn = get_conn(DB_FILE)
         cursor = conn.cursor()
         # Now query channel_number instead of id.
         cursor.execute("SELECT channel_number, name FROM channels")
@@ -74,7 +74,7 @@ def stream_status():
             current_program = None
             try:
                 now = datetime.datetime.utcnow().strftime("%Y%m%d%H%M%S") + " +0000"
-                conn = sqlite3.connect(DB_FILE)
+                conn = get_conn(DB_FILE)
                 cursor = conn.cursor()
                 # Use channel_number (as string) in the lookup; your build_combined_epg() stores this in channel_tvg_name.
                 cursor.execute("""

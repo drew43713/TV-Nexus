@@ -9,6 +9,8 @@ import json
 import random
 import logging
 
+from .db import get_conn
+
 from .config import EPG_DIR, MODIFIED_EPG_DIR, DB_FILE, EPG_COLORS_FILE, CONFIG_FILE_PATH, HOST_IP, PORT
 
 logger = logging.getLogger(__name__)
@@ -69,7 +71,7 @@ def parse_raw_epg_files():
         logger.info(f"[INFO] No EPG files found in EPG_DIR.")
         return
 
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_conn(DB_FILE)
     c = conn.cursor()
 
     # Clear previous raw EPG data.
@@ -140,7 +142,7 @@ def parse_raw_epg_files():
 # ====================================================
 def build_combined_epg():
     logger.info(f"[INFO] Building combined EPG from raw DB...")
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_conn(DB_FILE)
     c = conn.cursor()
     base_url = get_base_url()
     # Remove old programme entries.
@@ -249,7 +251,7 @@ def update_program_data_for_channel(db_id: int):
       - Then we remove old EPG data using that channel_number, 
         and re-insert partial EPG for that channel_number.
     """
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_conn(DB_FILE)
     c = conn.cursor()
     c.execute("SELECT channel_number, tvg_name, name, logo_url FROM channels WHERE id = ?", (db_id,))
     row = c.fetchone()
@@ -267,7 +269,7 @@ def update_program_data_for_channel(db_id: int):
 
     # Reload the partial EPG for that channel_number from raw_epg_* 
     # (matching tvg_name or name).
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_conn(DB_FILE)
     c = conn.cursor()
 
     db_tvg_name = db_tvg_name or ""
@@ -373,7 +375,7 @@ def _remove_programs_from_db(channel_number: int):
     CHANGED: This now accepts channel_number, because epg_programs.channel_tvg_name 
     is stored as the channel_number in string form.
     """
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_conn(DB_FILE)
     c = conn.cursor()
     c.execute("DELETE FROM epg_programs WHERE channel_tvg_name = ?", (str(channel_number),))
     conn.commit()
@@ -410,7 +412,7 @@ def update_channel_logo_in_epg(channel_id: int, new_logo: str):
     2) update <channel id="channel_number">
     """
     # CHANGED: fetch channel_number from DB
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_conn(DB_FILE)
     c = conn.cursor()
     c.execute("SELECT channel_number FROM channels WHERE id = ?", (channel_id,))
     row = c.fetchone()
@@ -452,7 +454,7 @@ def update_channel_metadata_in_epg(channel_id: int, new_name: str, new_logo: str
     """
     Similar approach: fetch channel_number from the DB, update <channel id=channel_number>.
     """
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_conn(DB_FILE)
     c = conn.cursor()
     c.execute("SELECT channel_number FROM channels WHERE id = ?", (channel_id,))
     row = c.fetchone()
@@ -539,7 +541,7 @@ def update_programs_db_on_swap(old_num: int, new_num: int, do_swap: bool):
     If do_swap == True, we do a 3-step swap using a temp value.
     Otherwise, it's just a direct rename from old_num to new_num.
     """
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_conn(DB_FILE)
     c = conn.cursor()
 
     if do_swap:

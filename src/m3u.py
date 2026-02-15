@@ -1,14 +1,15 @@
 import os
 import logging
-
-logger = logging.getLogger(__name__)
-import sqlite3
 import html
 import hashlib
 import requests
 import re
+
+from .db import get_conn
 from .config import M3U_DIR, DB_FILE, LOGOS_DIR
 from .epg import parse_raw_epg_files, build_combined_epg
+
+logger = logging.getLogger(__name__)
 
 def cache_logo(logo_url: str, channel_identifier: str = None) -> str:
     if not logo_url:
@@ -75,7 +76,7 @@ def load_m3u_files():
         logger.info(f"[INFO] No M3U file found. Please upload an M3U file to the {M3U_DIR} directory and restart the app.")
         return
 
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_conn(DB_FILE)
     c = conn.cursor()
 
     # Ensure that the channels table has a 'removed_reason' column.

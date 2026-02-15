@@ -18,6 +18,8 @@ from .epg import (
 from .streaming import get_shared_stream, clear_shared_stream
 from fastapi.templating import Jinja2Templates
 import logging
+
+from .db import get_conn
 logger = logging.getLogger(__name__)
 # Silence Uvicorn access logs ("GET /... 200" / "404 Not Found" lines)
 logging.getLogger("uvicorn.access").disabled = True
@@ -52,7 +54,7 @@ def get_base_url():
 @router.get("/", response_class=HTMLResponse)
 def web_interface(request: Request):
     import datetime
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_conn(DB_FILE)
     c = conn.cursor()
     c.execute("SELECT id, channel_number, name, url, tvg_name, logo_url, group_title, active, removed_reason FROM channels ORDER BY channel_number")
     channels = c.fetchall()
@@ -120,7 +122,7 @@ def discover(request: Request):
 @router.get("/lineup.json")
 def lineup(request: Request):
     base_url = get_base_url()
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_conn(DB_FILE)
     c = conn.cursor()
     c.execute("SELECT channel_number, name, url, logo_url FROM channels WHERE active = 1 ORDER BY channel_number")
     rows = c.fetchall()
@@ -169,7 +171,7 @@ def serve_epg():
 
 @router.get("/tuner/{channel_number}")
 def tuner_stream(channel_number: int):
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_conn(DB_FILE)
     c = conn.cursor()
     c.execute("SELECT url FROM channels WHERE channel_number=? AND active=1", (channel_number,))
     row = c.fetchone()
@@ -224,7 +226,7 @@ def insert_channel_at(insert_at: int = Form(...), swap: bool = Form(False)):
     The `swap` parameter is accepted for symmetry with client code but ignored here.
     """
     try:
-        conn = sqlite3.connect(DB_FILE)
+        conn = get_conn(DB_FILE)
         c = conn.cursor()
         # Begin a write transaction immediately to avoid waiting during updates
         c.execute("BEGIN IMMEDIATE")
@@ -299,7 +301,7 @@ async def insert_channel_at_stream(insert_at: int = Query(...)):
     async def event_stream():
         conn = None
         try:
-            conn = sqlite3.connect(DB_FILE)
+            conn = get_conn(DB_FILE)
             c = conn.cursor()
             # Acquire write lock up front
             c.execute("BEGIN IMMEDIATE")
@@ -392,7 +394,7 @@ async def insert_channel_at_stream(insert_at: int = Query(...)):
 
 @router.post("/update_channel_active")
 def update_channel_active(channel_id: int = Form(...), active: bool = Form(...)):
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_conn(DB_FILE)
     c = conn.cursor()
     # Check if the channel has been marked as removed.
     c.execute("SELECT removed_reason FROM channels WHERE id = ?", (channel_id,))
@@ -417,7 +419,7 @@ def update_channel_active(channel_id: int = Form(...), active: bool = Form(...))
 @router.post("/update_channels_active_bulk")
 def update_channels_active_bulk(channel_ids: str = Form(...), active: bool = Form(...)):
     ids = [cid.strip() for cid in channel_ids.split(',') if cid.strip()]
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_conn(DB_FILE)
     c = conn.cursor()
     data = [(1 if active else 0, cid) for cid in ids]
     c.executemany("UPDATE channels SET active = ? WHERE id = ?", data)
@@ -434,7 +436,7 @@ def update_channels_active_bulk(channel_ids: str = Form(...), active: bool = For
 
 @router.post("/update_channel_logo")
 def update_channel_logo(channel_id: int = Form(...), new_logo: str = Form(...)):
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_conn(DB_FILE)
     c = conn.cursor()
     c.execute("UPDATE channels SET logo_url = ? WHERE id = ?", (new_logo, channel_id))
     conn.commit()
@@ -453,7 +455,7 @@ def update_channel_name(channel_id: int = Form(...), new_name: str = Form(...)):
     We'll fetch the channel's current logo so it doesn't get lost.
     """
     try:
-        conn = sqlite3.connect(DB_FILE)
+        conn = get_conn(DB_FILE)
         c = conn.cursor()
         c.execute("SELECT logo_url FROM channels WHERE id = ?", (channel_id,))
         row = c.fetchone()
@@ -476,7 +478,7 @@ def update_channel_name(channel_id: int = Form(...), new_name: str = Form(...)):
 @router.post("/update_channel_category")
 def update_channel_category(channel_id: int = Form(...), new_category: str = Form(...)):
     try:
-        conn = sqlite3.connect(DB_FILE)
+        conn = get_conn(DB_FILE)
         c = conn.cursor()
         c.execute("SELECT id FROM channels WHERE id = ?", (channel_id,))
         if not c.fetchone():
@@ -503,7 +505,7 @@ def get_epg_entries(search: str = Query("", min_length=0), raw_file: str = Query
     If 'raw_file' is provided, we also filter by raw_epg_file.
     """
 
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_conn(DB_FILE)
     c = conn.cursor()
 
     # Build a dynamic WHERE clause to handle search and raw_file.
@@ -559,7 +561,7 @@ def update_epg_entry(channel_id: int = Form(...), new_epg_entry: str = Form(...)
     Allows changing the tvg_name for a single channel, then partial re-parse.
     """
     try:
-        conn = sqlite3.connect(DB_FILE)
+        conn = get_conn(DB_FILE)
         c = conn.cursor()
         c.execute("SELECT tvg_name FROM channels WHERE id = ?", (channel_id,))
         row = c.fetchone()
@@ -579,7 +581,7 @@ def update_epg_entry(channel_id: int = Form(...), new_epg_entry: str = Form(...)
 @router.get("/api/current_program")
 def get_current_program(channel_id: int):
     now = datetime.datetime.utcnow().strftime("%Y%m%d%H%M%S") + " +0000"
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_conn(DB_FILE)
     c = conn.cursor()
     c.execute("""
         SELECT title, start, stop, description
@@ -598,7 +600,7 @@ def get_current_program(channel_id: int):
 
 @router.get("/probe_stream")
 def probe_stream(channel_id: int = Query(..., description="The channel ID to probe")):
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_conn(DB_FILE)
     c = conn.cursor()
     c.execute("SELECT url FROM channels WHERE id = ?", (channel_id,))
     row = c.fetchone()
@@ -662,7 +664,7 @@ def update_channel_properties(
       - update channel_name or channel_number in EPG.xml
     """
     try:
-        conn = sqlite3.connect(DB_FILE)
+        conn = get_conn(DB_FILE)
         c = conn.cursor()
         c.execute("SELECT tvg_name, active, channel_number, logo_url, name FROM channels WHERE id = ?", (channel_id,))
         row = c.fetchone()
@@ -722,7 +724,7 @@ def auto_number_channels(
     channel_ids: str = Form(...)
 ):
     try:
-        conn = sqlite3.connect(DB_FILE)
+        conn = get_conn(DB_FILE)
         c = conn.cursor()
 
         # Parse the provided channel IDs into a list of integers.
@@ -768,7 +770,7 @@ def auto_number_channels(
 
 @router.get("/api/epg_filenames")
 def get_epg_filenames():
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_conn(DB_FILE)
     c = conn.cursor()
     c.execute("""
         SELECT DISTINCT raw_epg_file
@@ -791,7 +793,7 @@ def delete_channel(channel_id: int = Form(...)):
     """
     try:
         # Open connection and get channel details.
-        conn = sqlite3.connect(DB_FILE)
+        conn = get_conn(DB_FILE)
         c = conn.cursor()
         c.execute("SELECT id, name, channel_number FROM channels WHERE id = ?", (channel_id,))
         row = c.fetchone()
