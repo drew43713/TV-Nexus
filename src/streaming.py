@@ -148,7 +148,7 @@ def build_ffmpeg_command(stream_url: str) -> list[str]:
 
     # Print the final command unconditionally for easier diagnostics
     quoted = " ".join(shlex.quote(t) for t in cmd)
-    logger.info("[FFmpeg] Command:", quoted)
+    logger.info("[FFmpeg] Command: %s", quoted)
 
     return cmd
 
