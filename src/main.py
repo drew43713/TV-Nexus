@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 import asyncio
 from fastapi.staticfiles import StaticFiles
 import os
@@ -22,6 +22,20 @@ from .config import config, LOGOS_DIR, CUSTOM_LOGOS_DIR, USE_PREGENERATED_DATA
 from .tasks import start_epg_reparse_task
 
 app = FastAPI()
+
+@app.get("/health/db")
+def db_health():
+    """Return sqlite PRAGMAs to confirm WAL/busy_timeout are active."""
+    try:
+        from .db import get_conn
+
+        with get_conn() as conn:
+            jm = conn.execute("PRAGMA journal_mode;").fetchone()[0]
+            bt = conn.execute("PRAGMA busy_timeout;").fetchone()[0]
+            sync = conn.execute("PRAGMA synchronous;").fetchone()[0]
+        return {"journal_mode": jm, "busy_timeout_ms": bt, "synchronous": sync}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # --- GPU / CUDA detection helpers ---
