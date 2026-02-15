@@ -10,18 +10,23 @@ from .logging_config import configure_logging
 configure_logging()
 logger = logging.getLogger(__name__)
 
-# Import your existing modules/routes
+# Initialize config early (before importing modules that use config constants).
+from . import config as config_module
+
+config_module.init_config()
+
+# Import modules/routes after config init so they see the correct constants.
 from .routes import router as app_router
 from .status import router as status_router
 from .settings import router as settings_router
 from .database import init_db
 from .m3u import load_m3u_files
 
-# Import 'config' and the new function for re-parse tasks
-from .config import config, LOGOS_DIR, CUSTOM_LOGOS_DIR, USE_PREGENERATED_DATA
+from .config import config, CUSTOM_LOGOS_DIR, USE_PREGENERATED_DATA
 from .tasks import start_epg_reparse_task
 
 app = FastAPI()
+
 
 @app.get("/health/db")
 def db_health():
@@ -56,27 +61,20 @@ def _run_cmd(cmd: list[str]) -> tuple[int, str, str]:
         return 124, "", "Command timed out"
 
 
-def detect_cuda_support() -> dict:
-    """Detect whether NVIDIA GPU and CUDA hwaccel are available to this container.
 
-    Returns a dict with keys:
-      - gpu_available: bool
-      - nvidia_smi_rc: int
-      - nvidia_smi_output: str
-      - ffmpeg_hwaccels_rc: int
-      - ffmpeg_hwaccels: list[str]
-      - cuda_in_hwaccels: bool
-    """
-    # Check nvidia-smi presence and output
+def detect_cuda_support() -> dict:
+    """Detect whether NVIDIA GPU and CUDA hwaccel are available to this container."""
     smi_rc, smi_out, smi_err = _run_cmd(["nvidia-smi"])  # requires `--gpus all` in Docker
     gpu_available = smi_rc == 0
 
-    # Ask ffmpeg what hwaccels it supports
-    ff_rc, ff_out, ff_err = _run_cmd(["ffmpeg", "-hide_banner", "-hwaccels"])  # requires ffmpeg compiled with CUDA
-    # ffmpeg prints list of accelerators on stdout, one per line after a header
+    ff_rc, ff_out, ff_err = _run_cmd(["ffmpeg", "-hide_banner", "-hwaccels"])
     hw_lines = []
     if ff_rc == 0 and ff_out:
-        hw_lines = [ln.strip() for ln in ff_out.splitlines() if ln.strip() and not ln.lower().startswith("hardware acceleration methods")]
+        hw_lines = [
+            ln.strip()
+            for ln in ff_out.splitlines()
+            if ln.strip() and not ln.lower().startswith("hardware acceleration methods")
+        ]
     cuda_in = any(ln.lower() == "cuda" for ln in hw_lines)
 
     return {
@@ -88,34 +86,37 @@ def detect_cuda_support() -> dict:
         "cuda_in_hwaccels": bool(cuda_in),
     }
 
+
 # Mount static directories
 app.mount("/static", StaticFiles(directory="static"), name="static")
 app.mount("/custom_logos", StaticFiles(directory=CUSTOM_LOGOS_DIR), name="custom_logos")
-app.mount("/schedulesdirect_cache", StaticFiles(directory="config/schedulesdirect_cache"), name="schedulesdirect_cache")
+app.mount(
+    "/schedulesdirect_cache",
+    StaticFiles(directory="config/schedulesdirect_cache"),
+    name="schedulesdirect_cache",
+)
 
 # Include all routes
 app.include_router(app_router)
 app.include_router(settings_router)
 app.include_router(status_router)
 
+
 @app.get("/health/gpu")
 def gpu_health():
-    """Return information about NVIDIA/CUDA availability inside this container."""
     info = detect_cuda_support()
-    # Reflect any user-selected ffmpeg profile if available (set elsewhere, e.g., streaming.py/settings)
     selection = {
         "ffmpeg_profile": config.get("FFMPEG_PROFILE"),
         "ffmpeg_custom_args": config.get("FFMPEG_CUSTOM_ARGS"),
     }
     return {"detection": info, "selection": selection}
 
+
 @app.on_event("startup")
 async def startup_event():
-    # Detect NVIDIA/CUDA availability and configure ffmpeg usage
     force_disable = os.getenv("FORCE_DISABLE_CUDA", "").lower() in ("1", "true", "yes")
     info = detect_cuda_support() if not force_disable else {"gpu_available": False, "cuda_in_hwaccels": False}
 
-    # Log detailed GPU detection info
     if force_disable:
         logger.info("[Startup][GPU] CUDA check skipped: FORCE_DISABLE_CUDA is set.")
     else:
@@ -124,28 +125,23 @@ async def startup_event():
         if smi_rc == 0 and smi_out:
             smi_lines = [ln for ln in smi_out.splitlines() if ln.strip()]
             smi_summary = " | ".join(smi_lines[:2]) if smi_lines else "(no output)"
-            logger.info(f"[Startup][GPU] nvidia-smi OK (rc=0). Summary: {smi_summary}")
+            logger.info("[Startup][GPU] nvidia-smi OK (rc=0). Summary: %s", smi_summary)
         else:
-            logger.info(f"[Startup][GPU] nvidia-smi not available or failed (rc={smi_rc}). Output: {smi_out}")
+            logger.info("[Startup][GPU] nvidia-smi not available or failed (rc=%s). Output: %s", smi_rc, smi_out)
 
         ff_rc = info.get("ffmpeg_hwaccels_rc")
         hwaccels = info.get("ffmpeg_hwaccels", [])
         if ff_rc == 0:
-            logger.info(f"[Startup][GPU] FFmpeg hwaccels: {', '.join(hwaccels) if hwaccels else '(none)'}")
+            logger.info("[Startup][GPU] FFmpeg hwaccels: %s", ", ".join(hwaccels) if hwaccels else "(none)")
         else:
-            logger.info(f"[Startup][GPU] FFmpeg -hwaccels failed (rc={ff_rc}).")
+            logger.info("[Startup][GPU] FFmpeg -hwaccels failed (rc=%s).", ff_rc)
 
-    # Note: We no longer auto-select an ffmpeg profile here. Detection is logged for transparency,
-    # but the active profile is chosen by the user (e.g., via settings/streaming module).
     logger.info("[Startup][GPU] Auto-selection disabled. Choose an ffmpeg profile in settings.")
 
-    # Initialize the database and load M3U files on startup.
     init_db()
     if not USE_PREGENERATED_DATA:
-        # Load M3U files and start EPG background task as usual
         load_m3u_files()
         if config["REPARSE_EPG_INTERVAL"] > 0:
             await start_epg_reparse_task()
     else:
-        # Skipping M3U load and EPG re-parse as requested; using pre-generated data
         logger.info("[Startup] USE_PREGENERATED_DATA is True: skipping M3U load and EPG re-parse task.")
