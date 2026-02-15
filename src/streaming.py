@@ -1,9 +1,13 @@
 import subprocess
 import threading
 import queue
-from .config import config  # access runtime ffmpeg/gpu decisions
 import sqlite3
 import shlex
+import logging
+
+from .config import config  # access runtime ffmpeg/gpu decisions
+
+logger = logging.getLogger(__name__)
 
 # --- FFmpeg profile management ---
 # We keep a registry of named profiles. Each profile is a list of argument tokens
