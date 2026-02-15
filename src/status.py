@@ -34,7 +34,7 @@ def stream_status():
             channel_names[str(row[0])] = row[1]
         conn.close()
     except Exception as e:
-        print("Error loading channel names:", e)
+        logger.info("Error loading channel names:", e)
     
     with streams_lock:
         for channel_number, shared in shared_streams.items():

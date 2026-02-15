@@ -1,4 +1,7 @@
 import os
+import logging
+
+logger = logging.getLogger(__name__)
 import sqlite3
 import html
 import hashlib
@@ -38,11 +41,11 @@ def cache_logo(logo_url: str, channel_identifier: str = None) -> str:
             with open(filepath, "wb") as f:
                 f.write(response.content)
         else:
-            print(f"Warning: Failed to download logo {logo_url} (status: {response.status_code}).")
+            logger.info(f"Warning: Failed to download logo {logo_url} (status: {response.status_code}).")
             return logo_url
         return f"/static/logos/{filename}"
     except Exception as e:
-        print(f"Error caching logo {logo_url}: {e}")
+        logger.info(f"Error caching logo {logo_url}: {e}")
         return logo_url
 
 def parse_m3u_attribute(line: str, attr_name: str) -> str:
@@ -69,7 +72,7 @@ def load_m3u_files():
     # Process only one M3U file at a time.
     m3u_file = find_m3u_file()
     if not m3u_file:
-        print(f"[INFO] No M3U file found. Please upload an M3U file to the {M3U_DIR} directory and restart the app.")
+        logger.info(f"[INFO] No M3U file found. Please upload an M3U file to the {M3U_DIR} directory and restart the app.")
         return
 
     conn = sqlite3.connect(DB_FILE)
@@ -81,11 +84,11 @@ def load_m3u_files():
     if "removed_reason" not in columns:
         try:
             c.execute("ALTER TABLE channels ADD COLUMN removed_reason TEXT")
-            print("[INFO] Added removed_reason column to channels.")
+            logger.info(f"[INFO] Added removed_reason column to channels.")
         except Exception as e:
-            print("Warning: Could not add removed_reason column:", e)
+            logger.info("Warning: Could not add removed_reason column:", e)
 
-    print(f"[INFO] Loading M3U: {m3u_file}")
+    logger.info(f"[INFO] Loading M3U: {m3u_file}")
     with open(m3u_file, "r", encoding="utf-8") as f:
         lines = f.readlines()
 
@@ -122,7 +125,7 @@ def load_m3u_files():
                         SET url = ?, logo_url = ?, name = ?, group_title = ?
                         WHERE id = ?
                     """, (url, tvg_logo_local, name_part, group_title, channel_id))
-                    print(f"[INFO] Updated channel '{key}' details but left as removed (removed_reason: {removed_reason}).")
+                    logger.info(f"[INFO] Updated channel '{key}' details but left as removed (removed_reason: {removed_reason}).")
                 else:
                     if old_url != url or (old_logo != tvg_logo_local):
                         # Update channel details without modifying the active status.
@@ -131,10 +134,10 @@ def load_m3u_files():
                             SET url = ?, logo_url = ?, name = ?, group_title = ?, removed_reason = NULL
                             WHERE id = ?
                         """, (url, tvg_logo_local, name_part, group_title, channel_id))
-                        print(f"[INFO] Updated channel '{key}' with new URL and logo (active status unchanged).")
+                        logger.info(f"[INFO] Updated channel '{key}' with new URL and logo (active status unchanged).")
                     else:
                         # No changes necessary; leave active status as is.
-                        print(f"[INFO] Channel '{key}' already up-to-date; active status unchanged.")
+                        logger.info(f"[INFO] Channel '{key}' already up-to-date; active status unchanged.")
             else:
                 tvg_logo_local = cache_logo(remote_logo, channel_identifier=key) if remote_logo else ""
                 # Insert new channel as inactive (active = 0)
@@ -153,7 +156,7 @@ def load_m3u_files():
                     elif n > next_number:
                         break
                 c.execute("UPDATE channels SET channel_number = ? WHERE id = ?", (next_number, new_id))
-                print(f"[INFO] Inserted new channel '{key}' with logo. (Inactive by default, channel_number set to {next_number})")
+                logger.info(f"[INFO] Inserted new channel '{key}' with logo. (Inactive by default, channel_number set to {next_number})")
             idx += 2
         else:
             idx += 1
@@ -165,11 +168,11 @@ def load_m3u_files():
         chan_id, chan_name, active = channel
         if chan_name not in m3u_keys and active == 1:
             c.execute("UPDATE channels SET active = 0, removed_reason = 'Removed from M3U' WHERE id = ?", (chan_id,))
-            print(f"[INFO] Marked channel '{chan_name}' as removed (not in current M3U).")
+            logger.info(f"[INFO] Marked channel '{chan_name}' as removed (not in current M3U).")
 
     conn.commit()
     conn.close()
 
-    print("[INFO] Channels updated. Updating modified EPG file...")
+    logger.info(f"[INFO] Channels updated. Updating modified EPG file...")
     parse_raw_epg_files()
     build_combined_epg()

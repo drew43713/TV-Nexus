@@ -1,5 +1,10 @@
 import sqlite3
+import logging
+
+logger = logging.getLogger(__name__)
 from fastapi import HTTPException
+
+logger = logging.getLogger(__name__)
 from .config import DB_FILE
 
 def init_db():
@@ -34,26 +39,26 @@ def init_db():
         try:
             c.execute("ALTER TABLE channels ADD COLUMN channel_number INTEGER")
         except sqlite3.OperationalError as e:
-            print("Error adding channel_number column:", e)
+            logger.info("Error adding channel_number column:", e)
 
     # Check if 'removed_reason' column exists.
     if "removed_reason" not in columns:
         try:
             c.execute("ALTER TABLE channels ADD COLUMN removed_reason TEXT")
         except sqlite3.OperationalError as e:
-            print("Error adding removed_reason column:", e)
+            logger.info("Error adding removed_reason column:", e)
 
     # Create a unique index on channel_number (if needed).
     try:
         c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_channel_number ON channels(channel_number)")
     except sqlite3.OperationalError as e:
-        print("Error creating unique index for channel_number:", e)
+        logger.info("Error creating unique index for channel_number:", e)
 
     # For existing records where channel_number is NULL, set it equal to id.
     try:
         c.execute("UPDATE channels SET channel_number = id WHERE channel_number IS NULL")
     except sqlite3.OperationalError as e:
-        print("Error updating channel_number:", e)
+        logger.info("Error updating channel_number:", e)
 
     # Create epg_programs table.
     c.execute('''
@@ -92,7 +97,7 @@ def init_db():
         try:
             c.execute("ALTER TABLE raw_epg_channels ADD COLUMN raw_epg_file TEXT")
         except sqlite3.OperationalError as e:
-            print(f"[WARNING] Could not add raw_epg_file column to raw_epg_channels: {e}")
+            logger.warning(f"[WARNING] Could not add raw_epg_file column to raw_epg_channels: {e}")
 
     # Create raw_epg_programs table with the new raw_epg_file column.
     c.execute('''
@@ -115,12 +120,12 @@ def init_db():
         try:
             c.execute("ALTER TABLE raw_epg_programs ADD COLUMN icon_url TEXT")
         except sqlite3.OperationalError as e:
-            print(f"[WARNING] Could not add icon_url column: {e}")
+            logger.warning(f"[WARNING] Could not add icon_url column: {e}")
     if "raw_epg_file" not in columns:
         try:
             c.execute("ALTER TABLE raw_epg_programs ADD COLUMN raw_epg_file TEXT")
         except sqlite3.OperationalError as e:
-            print(f"[WARNING] Could not add raw_epg_file column: {e}")
+            logger.warning(f"[WARNING] Could not add raw_epg_file column: {e}")
 
     conn.commit()
     conn.close()

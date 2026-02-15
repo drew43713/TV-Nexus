@@ -264,7 +264,7 @@ def insert_channel_at(insert_at: int = Form(...), swap: bool = Form(False)):
                 update_modified_epg(ch_num, ch_num + 1, False)
         except Exception as epg_err:
             # Log-only: EPG update failure shouldn't revert DB changes
-            print(f"[WARNING] EPG update after insert failed: {epg_err}")
+            logger.warning(f"[WARNING] EPG update after insert failed: {epg_err}")
 
         return JSONResponse({"success": True, "shifted": len(affected)})
     except Exception as e:
@@ -805,7 +805,7 @@ def delete_channel(channel_id: int = Form(...)):
             from .streaming import clear_shared_stream
             clear_shared_stream(ch_number)
         except Exception as e:
-            print(f"[WARNING] Could not clear stream for channel number {ch_number}: {e}")
+            logger.warning(f"[WARNING] Could not clear stream for channel number {ch_number}: {e}")
         
         # Delete the channel from the database.
         c.execute("DELETE FROM channels WHERE id = ?", (channel_id,))

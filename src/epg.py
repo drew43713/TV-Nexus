@@ -55,14 +55,14 @@ def parse_xmltv_datetime(dt_str):
 # 2) Parse raw EPG files into 'raw_epg_*' tables
 # ====================================================
 def parse_raw_epg_files():
-    print("[INFO] Parsing raw EPG files...")
+    logger.info(f"[INFO] Parsing raw EPG files...")
     epg_files = [
         os.path.join(EPG_DIR, f)
         for f in os.listdir(EPG_DIR)
         if f.lower().endswith((".xml", ".xmltv", ".gz"))
     ]
     if not epg_files:
-        print("[INFO] No EPG files found in EPG_DIR.")
+        logger.info(f"[INFO] No EPG files found in EPG_DIR.")
         return
 
     conn = sqlite3.connect(DB_FILE)
@@ -75,7 +75,7 @@ def parse_raw_epg_files():
     # (Table creation is now handled in database.py.)
 
     for epg_file in epg_files:
-        print(f"[INFO] Reading raw EPG: {epg_file}")
+        logger.info(f"[INFO] Reading raw EPG: {epg_file}")
         try:
             with open(epg_file, "rb") as f:
                 magic = f.read(2)
@@ -125,17 +125,17 @@ def parse_raw_epg_files():
                     VALUES (?, ?, ?, ?, ?, ?, ?)
                 """, (composite_prog_channel, start_time, stop_time, title_text, desc_text, icon_src, os.path.basename(epg_file)))
         except Exception as e:
-            print(f"[ERROR] Parsing {epg_file} failed: {e}")
+            logger.error(f"[ERROR] Parsing {epg_file} failed: {e}")
 
     conn.commit()
     conn.close()
-    print("[INFO] Finished populating raw_epg_* tables.")
+    logger.info(f"[INFO] Finished populating raw_epg_* tables.")
     
 # ====================================================
 # 3) Build combined EPG from raw data (full rebuild)
 # ====================================================
 def build_combined_epg():
-    print("[INFO] Building combined EPG from raw DB...")
+    logger.info(f"[INFO] Building combined EPG from raw DB...")
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     base_url = get_base_url()
@@ -233,7 +233,7 @@ def build_combined_epg():
     combined_epg_file = os.path.join(MODIFIED_EPG_DIR, "EPG.xml")
     tree = ET.ElementTree(combined_root)
     tree.write(combined_epg_file, encoding="utf-8", xml_declaration=True)
-    print(f"[SUCCESS] Combined EPG saved as {combined_epg_file}")
+    logger.info(f"[SUCCESS] Combined EPG saved as {combined_epg_file}")
 
 # ====================================================
 # 4) Update program data for a single channel
@@ -251,7 +251,7 @@ def update_program_data_for_channel(db_id: int):
     row = c.fetchone()
     if not row:
         conn.close()
-        print(f"[ERROR] Channel ID {db_id} not found.")
+        logger.error(f"[ERROR] Channel ID {db_id} not found.")
         return
     channel_number, db_tvg_name, db_name, db_logo = row
     conn.close()
@@ -295,7 +295,7 @@ def update_program_data_for_channel(db_id: int):
 
     combined_epg_file = os.path.join(MODIFIED_EPG_DIR, "EPG.xml")
     if not os.path.exists(combined_epg_file):
-        print("[WARN] EPG.xml not found; build_combined_epg may be needed first.")
+        logger.warning(f"[WARN] EPG.xml not found; build_combined_epg may be needed first.")
         conn.close()
         return
 
@@ -304,7 +304,7 @@ def update_program_data_for_channel(db_id: int):
         root = tree.getroot()
         base_url = get_base_url()
     except Exception as e:
-        print(f"[ERROR] Unable to load {combined_epg_file}: {e}")
+        logger.error(f"[ERROR] Unable to load {combined_epg_file}: {e}")
         conn.close()
         return
 
@@ -362,7 +362,7 @@ def update_program_data_for_channel(db_id: int):
     conn.close()
 
     tree.write(combined_epg_file, encoding="utf-8", xml_declaration=True)
-    print(f"[INFO] Updated partial EPG for channel_number {channel_number} in {combined_epg_file}")
+    logger.info(f"[INFO] Updated partial EPG for channel_number {channel_number} in {combined_epg_file}")
 
 def _remove_programs_from_db(channel_number: int):
     """
@@ -392,9 +392,9 @@ def _remove_programs_from_xml(channel_number: int):
                 removed_count += 1
         if removed_count > 0:
             tree.write(combined_epg_file, encoding="utf-8", xml_declaration=True)
-            print(f"[INFO] Removed {removed_count} old programmes for channel_number {channel_number}.")
+            logger.info(f"[INFO] Removed {removed_count} old programmes for channel_number {channel_number}.")
     except Exception as e:
-        print(f"[ERROR] Could not remove old programmes from EPG.xml: {e}")
+        logger.error(f"[ERROR] Could not remove old programmes from EPG.xml: {e}")
 
 def update_channel_logo_in_epg(channel_id: int, new_logo: str):
     """
@@ -412,7 +412,7 @@ def update_channel_logo_in_epg(channel_id: int, new_logo: str):
     row = c.fetchone()
     conn.close()
     if not row:
-        print(f"[ERROR] update_channel_logo_in_epg: no channel found with id={channel_id}")
+        logger.error(f"[ERROR] update_channel_logo_in_epg: no channel found with id={channel_id}")
         return
     channel_number = row[0]
 
@@ -440,9 +440,9 @@ def update_channel_logo_in_epg(channel_id: int, new_logo: str):
                 break
         if updated:
             tree.write(combined_epg_file, encoding="utf-8", xml_declaration=True)
-            print(f"[INFO] Updated channel_number {channel_number} logo in EPG.xml.")
+            logger.info(f"[INFO] Updated channel_number {channel_number} logo in EPG.xml.")
     except Exception as e:
-        print(f"[ERROR] update_channel_logo_in_epg: {e}")
+        logger.error(f"[ERROR] update_channel_logo_in_epg: {e}")
 
 def update_channel_metadata_in_epg(channel_id: int, new_name: str, new_logo: str):
     """
@@ -454,7 +454,7 @@ def update_channel_metadata_in_epg(channel_id: int, new_name: str, new_logo: str
     row = c.fetchone()
     conn.close()
     if not row:
-        print(f"[ERROR] Could not update channel {channel_id} metadata in EPG.xml: channel not found.")
+        logger.error(f"[ERROR] Could not update channel {channel_id} metadata in EPG.xml: channel not found.")
         return
     channel_number = row[0]
 
@@ -485,7 +485,7 @@ def update_channel_metadata_in_epg(channel_id: int, new_name: str, new_logo: str
                     icon_el = ET.Element("icon", src=full_logo_url)
                     ch_el.append(icon_el)
     except Exception as e:
-        print(f"[ERROR] Could not update channel_number {channel_number} metadata in EPG.xml: {e}")
+        logger.error(f"[ERROR] Could not update channel_number {channel_number} metadata in EPG.xml: {e}")
 
 def update_modified_epg(old_id: int, new_id: int, swap: bool):
     """
@@ -523,9 +523,9 @@ def update_modified_epg(old_id: int, new_id: int, swap: bool):
                     prog.set("channel", str(new_id))
 
         tree.write(combined_epg_file, encoding="utf-8", xml_declaration=True)
-        print(f"[INFO] update_modified_epg: changed channel {old_id} -> {new_id} (swap={swap})")
+        logger.info(f"[INFO] update_modified_epg: changed channel {old_id} -> {new_id} (swap={swap})")
     except Exception as e:
-        print(f"[ERROR] update_modified_epg: {e}")
+        logger.error(f"[ERROR] update_modified_epg: {e}")
 
 
 def update_programs_db_on_swap(old_num: int, new_num: int, do_swap: bool):
@@ -549,7 +549,7 @@ def update_programs_db_on_swap(old_num: int, new_num: int, do_swap: bool):
 
     conn.commit()
     conn.close()
-    print(f"[INFO] epg_programs references updated from {old_num} to {new_num}, swap={do_swap}.")
+    logger.info(f"[INFO] epg_programs references updated from {old_num} to {new_num}, swap={do_swap}.")
     
     
 # ====================================================

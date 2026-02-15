@@ -174,7 +174,7 @@ async def upload_m3u(file: UploadFile = File(...)):
             try:
                 os.remove(os.path.join(M3U_DIR, f))
             except Exception as e:
-                print(f"Error removing existing m3u file {f}: {e}")
+                logger.info(f"Error removing existing m3u file {f}: {e}")
     
     destination = os.path.join(M3U_DIR, filename)
     try:

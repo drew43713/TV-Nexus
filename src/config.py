@@ -1,4 +1,7 @@
 import os
+import logging
+
+logger = logging.getLogger(__name__)
 import json
 
 # Path to the config file (inside the config directory)
@@ -42,7 +45,7 @@ if os.path.exists(CONFIG_FILE_PATH):
             file_config = json.load(f)
         config.update(file_config)
     except Exception as e:
-        print(f"Error reading config file: {e}")
+        logger.info(f"Error reading config file: {e}")
 
 # Override with environment variables (if they exist).
 for key in config.keys():
@@ -53,7 +56,7 @@ for key in config.keys():
             try:
                 config[key] = int(env_value)
             except ValueError:
-                print(f"Invalid {key} value in environment: {env_value}. Using {config[key]} instead.")
+                logger.info(f"Invalid {key} value in environment: {env_value}. Using {config[key]} instead.")
         elif key in ["USE_PREGENERATED_DATA"]:
             # Accept typical truthy/falsey strings
             truthy = {"1", "true", "yes", "on"}
@@ -73,9 +76,9 @@ for key in config.keys():
                 if isinstance(parsed, dict):
                     config[key] = parsed
                 else:
-                    print(f"Invalid FFMPEG_CUSTOM_PROFILES in environment (not a dict). Ignoring.")
+                    logger.info(f"Invalid FFMPEG_CUSTOM_PROFILES in environment (not a dict). Ignoring.")
             except Exception as e:
-                print(f"Invalid FFMPEG_CUSTOM_PROFILES JSON: {e}. Ignoring.")
+                logger.info(f"Invalid FFMPEG_CUSTOM_PROFILES JSON: {e}. Ignoring.")
         elif key == "FFMPEG_PROFILE":
             # Accept a simple string name for the selected profile
             config[key] = str(env_value)
@@ -85,7 +88,7 @@ for key in config.keys():
 # Normalize and validate URL_SCHEME
 scheme = str(config.get("URL_SCHEME", "http")).strip().lower()
 if scheme not in ("http", "https"):
-    print(f"Invalid URL_SCHEME '{scheme}' in config/environment. Falling back to 'http'.")
+    logger.info(f"Invalid URL_SCHEME '{scheme}' in config/environment. Falling back to 'http'.")
     scheme = "http"
 config["URL_SCHEME"] = scheme
 
@@ -94,7 +97,7 @@ try:
     with open(CONFIG_FILE_PATH, "w") as f:
         json.dump(config, f, indent=4)
 except Exception as e:
-    print(f"Error writing config file: {e}")
+    logger.info(f"Error writing config file: {e}")
 
 # Ensure necessary directories exist.
 os.makedirs(config["LOGOS_DIR"], exist_ok=True)

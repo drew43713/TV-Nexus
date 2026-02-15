@@ -1,4 +1,7 @@
 import asyncio
+import logging
+
+logger = logging.getLogger(__name__)
 
 from .config import config
 from .epg import parse_raw_epg_files, build_combined_epg
@@ -22,9 +25,9 @@ async def schedule_epg_reparse():
         try:
             parse_raw_epg_files()
             build_combined_epg()
-            print("[INFO] Automatic EPG re-parse completed.")
+            logger.info(f"[INFO] Automatic EPG re-parse completed.")
         except Exception as e:
-            print(f"[ERROR] Automatic EPG re-parse failed: {e}")
+            logger.error(f"[ERROR] Automatic EPG re-parse failed: {e}")
 
 async def start_epg_reparse_task():
     """
@@ -36,9 +39,9 @@ async def start_epg_reparse_task():
     if old_task and not old_task.done():
         # Cancel the old task if it's still running
         old_task.cancel()
-        print("[INFO] Old EPG re-parse task was canceled.")
+        logger.info(f"[INFO] Old EPG re-parse task was canceled.")
 
     # Create a new background task
     new_task = asyncio.create_task(schedule_epg_reparse())
     config["epg_reparse_task"] = new_task
-    print("[INFO] New EPG re-parse task started.")
+    logger.info(f"[INFO] New EPG re-parse task started.")

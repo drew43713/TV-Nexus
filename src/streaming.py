@@ -109,7 +109,7 @@ def _ensure_builtin_profiles_registered() -> None:
                 try:
                     register_ffmpeg_profile(pname, shlex.split(pargs))
                 except Exception as e:
-                    print(f"[FFmpeg] Skipping invalid custom profile '{pname}': {e}")
+                    logger.info(f"[FFmpeg] Skipping invalid custom profile '{pname}': {e}")
 
 
 _ensure_builtin_profiles_registered()
@@ -122,7 +122,7 @@ def build_ffmpeg_command(stream_url: str) -> list[str]:
     profile_name = get_selected_ffmpeg_profile_name()
     args = _profile_registry.get(profile_name)
     if not args:
-        print(f"[FFmpeg] Unknown selected profile '{profile_name}', falling back to 'CPU'.")
+        logger.info(f"[FFmpeg] Unknown selected profile '{profile_name}', falling back to 'CPU'.")
         args = _profile_registry["CPU"]
 
     # Replace the '{input}' placeholder with the actual URL
@@ -144,7 +144,7 @@ def build_ffmpeg_command(stream_url: str) -> list[str]:
 
     # Print the final command unconditionally for easier diagnostics
     quoted = " ".join(shlex.quote(t) for t in cmd)
-    print("[FFmpeg] Command:", quoted, flush=True)
+    logger.info("[FFmpeg] Command:", quoted, flush=True)
 
     return cmd
 
@@ -155,7 +155,7 @@ class SharedStream:
     def __init__(self, channel_id, ffmpeg_cmd):
         self.channel_id = channel_id
         self.ffmpeg_cmd = ffmpeg_cmd
-        print(f"[Stream] Starting channel {channel_id}", flush=True)
+        logger.info(f"[Stream] Starting channel {channel_id}", flush=True)
         self.process = subprocess.Popen(
             ffmpeg_cmd,
             stdout=subprocess.PIPE,
@@ -199,7 +199,7 @@ class SharedStream:
 
         # Determine reason: explicit end_reason set elsewhere, or EOF, otherwise unknown
         reason = self.end_reason or ("eof" if end_cause == "eof" else "unknown")
-        print(f"[Stream] Channel {self.channel_id} ended (reason: {reason}, exit_code: {rc})", flush=True)
+        logger.info(f"[Stream] Channel {self.channel_id} ended (reason: {reason}, exit_code: {rc})", flush=True)
 
         if stderr_output:
             stderr_text = stderr_output.decode("utf-8", errors="ignore")
@@ -207,7 +207,7 @@ class SharedStream:
             tail_count = min(10, len(lines))
             if tail_count > 0:
                 tail = "\n".join(lines[-tail_count:])
-                print(f"[FFmpeg stderr][channel {self.channel_id}] last {tail_count} lines:\n{tail}", flush=True)
+                logger.info(f"[FFmpeg stderr][channel {self.channel_id}] last {tail_count} lines:\n{tail}", flush=True)
 
     def add_subscriber(self):
         q = queue.Queue()
@@ -245,7 +245,7 @@ def clear_shared_stream(channel_id: int) -> bool:
         stream = shared_streams.get(channel_id)
         if not stream:
             return False
-        print(f"[Stream] Clearing channel {channel_id}", flush=True)
+        logger.info(f"[Stream] Clearing channel {channel_id}", flush=True)
         try:
             # Mark an explicit reason for diagnostics before kill
             try:

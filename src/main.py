@@ -1,8 +1,14 @@
-import asyncio
 from fastapi import FastAPI
+import asyncio
 from fastapi.staticfiles import StaticFiles
 import os
 import subprocess
+import logging
+
+from .logging_config import configure_logging
+
+configure_logging()
+logger = logging.getLogger(__name__)
 
 # Import your existing modules/routes
 from .routes import router as app_router
@@ -16,6 +22,7 @@ from .config import config, LOGOS_DIR, CUSTOM_LOGOS_DIR, USE_PREGENERATED_DATA
 from .tasks import start_epg_reparse_task
 
 app = FastAPI()
+
 
 # --- GPU / CUDA detection helpers ---
 def _run_cmd(cmd: list[str]) -> tuple[int, str, str]:
@@ -96,27 +103,27 @@ async def startup_event():
 
     # Log detailed GPU detection info
     if force_disable:
-        print("[Startup][GPU] CUDA check skipped: FORCE_DISABLE_CUDA is set.")
+        logger.info("[Startup][GPU] CUDA check skipped: FORCE_DISABLE_CUDA is set.")
     else:
         smi_rc = info.get("nvidia_smi_rc")
         smi_out = info.get("nvidia_smi_output", "")
         if smi_rc == 0 and smi_out:
             smi_lines = [ln for ln in smi_out.splitlines() if ln.strip()]
             smi_summary = " | ".join(smi_lines[:2]) if smi_lines else "(no output)"
-            print(f"[Startup][GPU] nvidia-smi OK (rc=0). Summary: {smi_summary}")
+            logger.info(f"[Startup][GPU] nvidia-smi OK (rc=0). Summary: {smi_summary}")
         else:
-            print(f"[Startup][GPU] nvidia-smi not available or failed (rc={smi_rc}). Output: {smi_out}")
+            logger.info(f"[Startup][GPU] nvidia-smi not available or failed (rc={smi_rc}). Output: {smi_out}")
 
         ff_rc = info.get("ffmpeg_hwaccels_rc")
         hwaccels = info.get("ffmpeg_hwaccels", [])
         if ff_rc == 0:
-            print(f"[Startup][GPU] FFmpeg hwaccels: {', '.join(hwaccels) if hwaccels else '(none)'}")
+            logger.info(f"[Startup][GPU] FFmpeg hwaccels: {', '.join(hwaccels) if hwaccels else '(none)'}")
         else:
-            print(f"[Startup][GPU] FFmpeg -hwaccels failed (rc={ff_rc}).")
+            logger.info(f"[Startup][GPU] FFmpeg -hwaccels failed (rc={ff_rc}).")
 
     # Note: We no longer auto-select an ffmpeg profile here. Detection is logged for transparency,
     # but the active profile is chosen by the user (e.g., via settings/streaming module).
-    print("[Startup][GPU] Auto-selection disabled. Choose an ffmpeg profile in settings.")
+    logger.info("[Startup][GPU] Auto-selection disabled. Choose an ffmpeg profile in settings.")
 
     # Initialize the database and load M3U files on startup.
     init_db()
@@ -127,4 +134,4 @@ async def startup_event():
             await start_epg_reparse_task()
     else:
         # Skipping M3U load and EPG re-parse as requested; using pre-generated data
-        print("[Startup] USE_PREGENERATED_DATA is True: skipping M3U load and EPG re-parse task.")
+        logger.info("[Startup] USE_PREGENERATED_DATA is True: skipping M3U load and EPG re-parse task.")
