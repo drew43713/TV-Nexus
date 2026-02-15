@@ -7,7 +7,11 @@ from datetime import datetime, timedelta
 import re
 import json
 import random
+import logging
+
 from .config import EPG_DIR, MODIFIED_EPG_DIR, DB_FILE, EPG_COLORS_FILE, CONFIG_FILE_PATH, HOST_IP, PORT
+
+logger = logging.getLogger(__name__)
 
 
 def _load_config_from_disk():
