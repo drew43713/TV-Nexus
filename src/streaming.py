@@ -148,7 +148,7 @@ def build_ffmpeg_command(stream_url: str) -> list[str]:
 
     # Print the final command unconditionally for easier diagnostics
     quoted = " ".join(shlex.quote(t) for t in cmd)
-    logger.info("[FFmpeg] Command:", quoted, flush=True)
+    logger.info("[FFmpeg] Command:", quoted)
 
     return cmd
 
@@ -159,7 +159,7 @@ class SharedStream:
     def __init__(self, channel_id, ffmpeg_cmd):
         self.channel_id = channel_id
         self.ffmpeg_cmd = ffmpeg_cmd
-        logger.info(f"[Stream] Starting channel {channel_id}", flush=True)
+        logger.info(f"[Stream] Starting channel {channel_id}")
         self.process = subprocess.Popen(
             ffmpeg_cmd,
             stdout=subprocess.PIPE,
@@ -203,7 +203,7 @@ class SharedStream:
 
         # Determine reason: explicit end_reason set elsewhere, or EOF, otherwise unknown
         reason = self.end_reason or ("eof" if end_cause == "eof" else "unknown")
-        logger.info(f"[Stream] Channel {self.channel_id} ended (reason: {reason}, exit_code: {rc})", flush=True)
+        logger.info(f"[Stream] Channel {self.channel_id} ended (reason: {reason}, exit_code: {rc})")
 
         if stderr_output:
             stderr_text = stderr_output.decode("utf-8", errors="ignore")
@@ -211,7 +211,7 @@ class SharedStream:
             tail_count = min(10, len(lines))
             if tail_count > 0:
                 tail = "\n".join(lines[-tail_count:])
-                logger.info(f"[FFmpeg stderr][channel {self.channel_id}] last {tail_count} lines:\n{tail}", flush=True)
+                logger.info(f"[FFmpeg stderr][channel {self.channel_id}] last {tail_count} lines:\n{tail}")
 
     def add_subscriber(self):
         q = queue.Queue()
@@ -249,7 +249,7 @@ def clear_shared_stream(channel_id: int) -> bool:
         stream = shared_streams.get(channel_id)
         if not stream:
             return False
-        logger.info(f"[Stream] Clearing channel {channel_id}", flush=True)
+        logger.info(f"[Stream] Clearing channel {channel_id}")
         try:
             # Mark an explicit reason for diagnostics before kill
             try:
